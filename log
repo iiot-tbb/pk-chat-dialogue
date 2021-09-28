@@ -1,0 +1,154 @@
+{
+    "do_train": false,
+    "do_test": false,
+    "do_infer": true,
+    "num_infer_batches": null,
+    "hparams_file": null,
+    "BPETextField": {
+        "vocab_path": "model/Bert/vocab.txt",
+        "filtered": false,
+        "max_len": 256,
+        "min_utt_len": 1,
+        "max_utt_len": 50,
+        "min_ctx_turn": 1,
+        "max_ctx_turn": 16,
+        "max_knowledge_num": 16,
+        "max_knowledge_len": 16,
+        "tokenizer_type": "Bert"
+    },
+    "Dataset": {
+        "data_dir": "data/DDE_Dialog",
+        "data_type": "multi_knowledge"
+    },
+    "Trainer": {
+        "use_data_distributed": false,
+        "valid_metric_name": "-loss",
+        "num_epochs": 10,
+        "save_dir": "outputs/DDE.infer",
+        "batch_size": 8,
+        "log_steps": 100,
+        "valid_steps": 2000,
+        "save_checkpoint": true,
+        "save_summary": false,
+        "shuffle": true,
+        "sort_pool_size": 0
+    },
+    "Model": {
+        "init_checkpoint": null,
+        "model": "UnifiedTransformer",
+        "num_token_embeddings": 30522,
+        "num_pos_embeddings": 512,
+        "num_type_embeddings": 2,
+        "num_turn_embeddings": 16,
+        "num_latent": 20,
+        "tau": 0.67,
+        "with_bow": true,
+        "hidden_dim": 768,
+        "num_heads": 12,
+        "num_layers": 12,
+        "padding_idx": 0,
+        "dropout": 0.1,
+        "embed_dropout": 0.0,
+        "attn_dropout": 0.1,
+        "ff_dropout": 0.1,
+        "use_discriminator": false,
+        "dis_ratio": 1.0,
+        "weight_sharing": true,
+        "pos_trainable": true,
+        "two_layer_predictor": false,
+        "bidirectional_context": true,
+        "label_smooth": 0.0,
+        "initializer_range": 0.02,
+        "lr": 5e-05,
+        "weight_decay": 0.0,
+        "max_grad_norm": null
+    },
+    "Generator": {
+        "generator": "BeamSearch",
+        "min_gen_len": 1,
+        "max_gen_len": 30,
+        "beam_size": 5,
+        "length_average": false,
+        "length_penalty": -1.0,
+        "ignore_unk": true
+    }
+}
+
+
+
+
+{
+  "do_train": false,
+  "do_test": false,
+  "do_infer": true,
+  "num_infer_batches": null,
+  "hparams_file": null,
+  "BPETextField": {
+    "vocab_path": "model/Bert/vocab.txt",
+    "filtered": false,
+    "max_len": 256,
+    "min_utt_len": 1,
+    "max_utt_len": 50,
+    "min_ctx_turn": 1,
+    "max_ctx_turn": 16,
+    "max_knowledge_num": 16,
+    "max_knowledge_len": 16,
+    "tokenizer_type": "Bert"
+  },
+  "Dataset": {
+    "data_dir": "data/DDE_Dialog",
+    "data_type": "multi_knowledge"
+  },
+  "Trainer": {
+    "use_data_distributed": false,
+    "valid_metric_name": "-loss",
+    "num_epochs": 10,
+    "save_dir": "outputs/DDE.infer",
+    "batch_size": 1,
+    "log_steps": 100,
+    "valid_steps": 2000,
+    "save_checkpoint": true,
+    "save_summary": false,
+    "shuffle": true,
+    "sort_pool_size": 0
+  },
+  "Model": {
+    "init_checkpoint": "outputs/DDE_Dialog/best.model",
+    "model": "UnifiedTransformer",
+    "num_token_embeddings": -1,
+    "num_pos_embeddings": 512,
+    "num_type_embeddings": 3,
+    "num_turn_embeddings": 16,
+    "num_latent": 20,
+    "tau": 0.67,
+    "with_bow": true,
+    "hidden_dim": 768,
+    "num_heads": 12,
+    "num_layers": 12,
+    "padding_idx": 0,
+    "dropout": 0.1,
+    "embed_dropout": 0.0,
+    "attn_dropout": 0.1,
+    "ff_dropout": 0.1,
+    "use_discriminator": true,
+    "dis_ratio": 1.0,
+    "weight_sharing": true,
+    "pos_trainable": true,
+    "two_layer_predictor": false,
+    "bidirectional_context": true,
+    "label_smooth": 0.0,
+    "initializer_range": 0.02,
+    "lr": 5e-05,
+    "weight_decay": 0.0,
+    "max_grad_norm": null
+  },
+  "Generator": {
+    "generator": "BeamSearch",
+    "min_gen_len": 1,
+    "max_gen_len": 30,
+    "beam_size": 5,
+    "length_average": false,
+    "length_penalty": -1.0,
+    "ignore_unk": true
+  }
+}
