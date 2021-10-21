@@ -1,15 +1,15 @@
 #!/bin/bash
 set -ux
 
-SAVE_DIR=outputs/DailyDialog
+SAVE_DIR=outputs/ACE_Dialog
 VOCAB_PATH=model/Bert/vocab.txt
-DATA_DIR=data/DailyDialog
+DATA_DIR=data/ACE_Dialog
 INIT_CHECKPOINT=model/PLATO
-DATA_TYPE=multi
+DATA_TYPE=multi_knowledge
 USE_VISUALDL=false
 
 # CUDA environment settings.
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0,1,2
 
 # Paddle environment settings.
 export FLAGS_fraction_of_gpu_memory_to_use=0.8
@@ -41,9 +41,9 @@ python -m \
     --vocab_path $VOCAB_PATH \
     --data_dir $DATA_DIR \
     --data_type $DATA_TYPE \
-    --batch_size 2 \
+    --batch_size 1 \
     --valid_steps 2000 \
-    --num_type_embeddings 2 \
+    --num_type_embeddings 3 \
     --use_discriminator true \
     --num_epoch 20 \
     --lr 1e-5 \
