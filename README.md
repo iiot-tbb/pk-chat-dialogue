@@ -48,19 +48,43 @@
 - 将数据导入neo4j
 - 论文撰写且与模型各部分的优化。
 
+
+##### 关于对话数据集中数据的长度 
+- dailydialog :  (3, 865)
+- personchat :  (22, 582)
+- DSTC :  (22, 666)
+- DDE :  (71, 522)
+
+根据最长长度的猜测,模型中有机制来选取长度合适的句子,因此，需要关注源码中关于句子长度的处理方式。
+上面的句子长度主要在 `field.py` 文件里，处理方式大致如下:
+- 每一个utt有一个最长长度
+- 总的utt+knwledge的长度不超过256
+- 有最少轮次和最多轮次数目。
+- 原则上可以不用自己处理句子长度的问题。
+- 也可以加入自己的裁原则
+
+## 20211020
+- 对数据进行了shuffle。
+- 修改了数据汇总存在'\n'的问题。
+- 数据处理步骤，
+    - `Baidu_Text_transAPI.py`翻译
+    - `Transform_to_plato_form.py`进行转换格式
+    - `Ace_Dialog/shuffle.py`进行shuffle。
+    - `merge_all.py`进行合并数据
 # 文件说明
+## 20211021
+- DailyDialog :BLEU_1-0.388   BLEU_2-0.304   INTRA_DIST_1-0.936   INTRA_DIST_2-0.987   INTER_DIST_1-0.055   INTER_DIST_2-0.303   LEN-10.993   TIME-34869.708
 
 #### `chat.py`:对话文件，生成的对话聊天
 #### `../data_en/Baidu_text_transAPI.py`:将中文数据翻译成英文
 #### `../data_en/Transform_to_plate_form.py`:将`json`格式的文本转换问纯文本形式,方便后续模型处理
 #### `../data_en/get_DDE_Data.py`:取得实验室数据中的三元组数据
-#### `../data_en/duconvEn_tran.txt`知识对话数据
+#### `../data_en/duconvEn_tran.txt`知识对话数据,`../data_en/duRecDialEn_train2.txt`推荐对话数据 
 #### `../data_en/make_abstract.py`缩短摘要的长度
 #### `../make_dialog.py`:制作对话数据
-#### ``
+#### `../data_en/duRec_palto.txt`,`../data_en/duconv_plato.txt` 符合输入的对话数据
 # 修改记录
-
-
+- `tokenizer.py` 的 162行加入自己的never_split
 # 采用的造对话数据的方式
 
 - 给出关于某个知识的三元组信息，一问一答回复。
