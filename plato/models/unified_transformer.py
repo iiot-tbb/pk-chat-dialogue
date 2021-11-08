@@ -93,6 +93,8 @@ class UnifiedTransformer(ModelBase):
                            help="The weight decay for Adam.")
         group.add_argument("--max_grad_norm", type=float, default=None,
                            help="The maximum norm of gradient.")
+        group.add_argument("--use_pointer_network",type =str2bool,default = False,
+                           help = "use pointer network to process knowledge") #新加入判断是否采用指针网络
         return group
 
     def __init__(self, name_scope, hparams, generator, dtype="float32"):
@@ -120,7 +122,8 @@ class UnifiedTransformer(ModelBase):
         self.bidirectional_context = hparams.bidirectional_context
         self.label_smooth = hparams.label_smooth
         self.initializer_range = hparams.initializer_range
-
+        self.use_pointer_network = hparams.use_pointer_network
+        
         self.embedder = Embedder(self.full_name(),
                                  self.hidden_dim,
                                  self.num_token_embeddings,
@@ -149,18 +152,18 @@ class UnifiedTransformer(ModelBase):
             self.layers.append(layer)
             self.add_sublayer(f"layer_{i}", layer)
 
-        if self.num_latent > 0:
+        if self.num_latent > 0: #隐变量预测
             self.post_network = FC(name_scope=self.full_name() + ".post_network",
                                    size=self.num_latent,
                                    bias_attr=False)
 
-            if self.use_discriminator:
+            if self.use_discriminator: #判别器预测
                 self.dis_ratio = hparams.dis_ratio
                 self.discriminator = FC(name_scope=self.full_name() + ".discriminator",
                                         size=1,
                                         act="sigmoid")
 
-        if self.two_layer_predictor:
+        if self.two_layer_predictor: #cbow预测
             self.pre_predictor = FC(name_scope=self.full_name() + ".pre_predictor",
                                     size=self.hidden_dim,
                                     num_flatten_dims=2,
@@ -198,6 +201,16 @@ class UnifiedTransformer(ModelBase):
 
     def _create_parameters(self):
         """ Create model's paramters. """
+        # self.lada_d = self.create_parameter(
+        #        attr=fluid.ParamAttr(
+        #            name="baba_d",
+        #            initializer=fluid.initializer.NormalInitializer(scale=self.initializer_range)),
+        #        shape=[1, 1, self.hidden_dim],
+        #        dtype=self._dtype)
+        if self.use_pointer_network:
+            pass
+            #self.lada = layers.create_parameter(name='lambda_point',shape=[2],default_initializer=fluid.initializer.NumpyArrayInitializer(np.array([0.5,0.5])),dtype=self._dtype)
+        
         if self.num_latent > 0:
             self.mask_embed = self.create_parameter(
                 attr=fluid.ParamAttr(
@@ -211,12 +224,12 @@ class UnifiedTransformer(ModelBase):
                     initializer=fluid.initializer.NormalInitializer(scale=self.initializer_range)),
                 shape=[self.num_latent, self.hidden_dim],
                 dtype=self._dtype)
-
-        sequence_mask = np.tri(self.num_pos_embeddings, self.num_pos_embeddings, dtype=self._dtype)
+      
+        sequence_mask = np.tri(self.num_pos_embeddings, self.num_pos_embeddings, dtype=self._dtype)#左下为1，右上为0
         self.sequence_mask = self.create_parameter(
             attr=fluid.ParamAttr(
                 name="sequence_mask",
-                initializer=fluid.initializer.NumpyArrayInitializer(sequence_mask),
+                initializer=fluid.initializer.NumpyArrayInitializer(sequence_mask), #用numpy初始化数据
                 trainable=False),
             shape=sequence_mask.shape,
             dtype=sequence_mask.dtype)
@@ -262,7 +275,7 @@ class UnifiedTransformer(ModelBase):
             self.load_dict(models)
             print(f"Loaded parameters from {self.init_checkpoint}")
 
-    def _create_mask(self, input_mask, append_head=False, auto_regressive=False):
+    def _create_mask(self, input_mask, append_head=False, auto_regressive=False):# knwoledge部分在PGN上不用加mask
         """
         Create attention mask.
 
@@ -277,48 +290,62 @@ class UnifiedTransformer(ModelBase):
         input_mask = layers.cast(input_mask, self._dtype)
         mask1 = layers.expand(input_mask, [1, 1, seq_len])
         mask2 = layers.transpose(mask1, [0, 2, 1])
-        mask = layers.elementwise_mul(mask1, mask2)
+        mask = layers.elementwise_mul(mask1, mask2) #mask elemwise乘mask.T是把 相应应该mask掉的地方mask掉。可以自己举个例子。很简单。
 
         if append_head:
             mask = layers.concat([mask[:, :1, :], mask], axis=1)
-            mask = layers.concat([mask[:, :, :1], mask], axis=2)
+            mask = layers.concat([mask[:, :, :1], mask], axis=2)# 句子上加入了latent_token
             seq_len += 1
 
-        if auto_regressive:
+        #print(seq_len)
+        #print(mask.shape)
+        #533
+        #[2, 533, 533]
+
+        if auto_regressive: #自回归是MLM任务吗,左下为1，右上为0，mask的位置目前是0表示，不被mask用1表示
+            #print('autorege',seq_len)
+            #print('autorege',mask.shape)
+            #print('autorege',self.sequence_mask.shape)
             seq_mask = self.sequence_mask[:seq_len, :seq_len]
+            #print('autorege',seq_mask.shape)
+            #autorege 533
+            #autorege [2, 533, 533]
+            #autorege [512, 512]
+            #autorege [512, 512]
+
             mask = layers.elementwise_mul(mask, seq_mask)
 
         mask = 1 - mask
-        return mask
+        return mask #到这为止，mask位为1，正常为0
 
-    def _join_mask(self, mask1, mask2):
+    def _join_mask(self, mask1, mask2): #合并mask，合并context部分的双向mask和tgt部分的的单向mask，目的是组成一个更大的包含两部分的mask矩阵,join的mask是从create部分来的
         """ Merge source attention mask and target attention mask.
 
         @param : mask1 : source attention mask
         @type : Variable(shape: [batch_size, max_src_len, max_src_len])
 
-        @param : mask1 : target attention mask
+        @param : mask1 : target attention mask,难道这不是mask2吗
         @type : Variable(shape: [batch_size, max_tgt_len, max_tgt_len])
         """
-        batch_size = mask1.shape[0]
+        batch_size = mask1.shape[0] #
         seq_len1 = mask1.shape[1]
         seq_len2 = mask2.shape[1]
         seq_len = seq_len1 + seq_len2
 
-        mask_lu = mask1
-        mask_ru = layers.fill_constant([batch_size, seq_len1, seq_len2], self._dtype, 1)
-        mask3 = layers.expand(mask2[:, :, :1], [1, 1, seq_len1])
-        mask4 = layers.expand(mask1[:, :1], [1, seq_len2, 1])
-        mask_lb = mask3 + mask4 - mask3 * mask4
-        mask_rb = mask2
-        mask_u = layers.concat([mask_lu, mask_ru], axis=2)
-        mask_b = layers.concat([mask_lb, mask_rb], axis=2)
-        mask = layers.concat([mask_u, mask_b], axis=1)
+        mask_lu = mask1 #[batch_size, seq_len1, seq_len1] left_upper
+        mask_ru = layers.fill_constant([batch_size, seq_len1, seq_len2], self._dtype, 1) #[batch_size,seq_len1,seq_len2] right_upper，这时候mask值为1
+        mask3 = layers.expand(mask2[:, :, :1], [1, 1, seq_len1]) #[batch_size,seq_len2,seq_len1] mask2的最后一个维度扩展到seq_len1的维度 
+        mask4 = layers.expand(mask1[:, :1], [1, seq_len2, 1]) #[batch_size,seq_len2,seq_len1]
+        mask_lb = mask3 + mask4 - mask3 * mask4 #[batch_size,seq_len2,seq_len1] left_bottem
+        mask_rb = mask2 #[batch_size, seq_len2, seq_len2] right_bottom
+        mask_u = layers.concat([mask_lu, mask_ru], axis=2)#[batch_size,seq_len1,seq_len1+seq_len2] upper
+        mask_b = layers.concat([mask_lb, mask_rb], axis=2) #[batch_size,seq_len2,seq_len1+seq_len2] bottom
+        mask = layers.concat([mask_u, mask_b], axis=1) #[batch_size,seq_len1+seq_len2,seq_len1+seq_len2]
         return mask
 
     def _posteriori_network(self, input_mask, embed, batch_size, src_len, tgt_len):
         """ Basic posteriori network implement. """
-        mask_embed = self.mask_embed
+        mask_embed = self.mask_embed#+self.lada_d
         mask_embed = layers.expand(mask_embed, [batch_size, 1, 1])
         mask_embed = self.embed_layer_norm(mask_embed)
         post_embed = layers.concat([mask_embed, embed], axis=1)
@@ -343,10 +370,10 @@ class UnifiedTransformer(ModelBase):
         src_embed = embed[:, :src_len]
         tgt_embed = embed[:, src_len:]
         if batch_size > 1:
-            neg_tgt_embed = layers.concat([tgt_embed[1:], tgt_embed[:1]], axis=0)
+            neg_tgt_embed = layers.concat([tgt_embed[1:], tgt_embed[:1]], axis=0)#相当于把label以循环列表的方式往后移动了一位。
         else:
             # Cannot train discriminator if batch_size == 1
-            neg_tgt_embed = tgt_embed
+            neg_tgt_embed = tgt_embed #这块可以修改，随机sample呢？
         neg_embed = layers.concat([src_embed, neg_tgt_embed], axis=1)
 
         # Create generation network mask
@@ -376,18 +403,22 @@ class UnifiedTransformer(ModelBase):
 
         return pos_probs, neg_probs
 
-    def _generation_network(self, input_mask, embed, batch_size, src_len, tgt_len, latent_embed):
+    def _generation_network(self, input_mask, embed, batch_size, src_len, tgt_len, latent_embed,knw_len,src_type,src_token):
         """ Basic generation network implement. """
+        #print(embed.shape)
+        #print(knw_len)
+        knw_len = knw_len.numpy()[0]
         if self.num_latent > 0:
-            latent_embed = F.unsqueeze(latent_embed, [1])
+            latent_embed = F.unsqueeze(latent_embed, [1])#btach_size,1,hidenn_embedding
             latent_embed = self.embed_layer_norm(latent_embed)
             dec_embed = layers.concat([latent_embed, embed], axis=1)
         else:
             dec_embed = embed
 
         # Create generation network mask
-        src_mask = input_mask[:, :src_len]
-        tgt_mask = input_mask[:, src_len:]
+        src_mask = input_mask[:, :src_len] #分别拿到context的mask
+        
+        tgt_mask = input_mask[:, src_len:] #拿到tgt的mask
         enc_mask = self._create_mask(src_mask, auto_regressive=not self.bidirectional_context,
                                      append_head=self.num_latent > 0)
         dec_mask = self._create_mask(tgt_mask, auto_regressive=True)
@@ -403,7 +434,7 @@ class UnifiedTransformer(ModelBase):
         dec_embed = dec_embed[:, -tgt_len:]
         if self.two_layer_predictor:
             dec_embed = self.pre_predictor(dec_embed)
-        if self.weight_sharing:
+        if self.weight_sharing:             #把token_embedding 换成knoledge_embedding 即为指针网络。
             token_embedding = self.embedder.token_embedding.weight
             dec_logits = layers.matmul(
                 x=dec_embed,
@@ -414,19 +445,68 @@ class UnifiedTransformer(ModelBase):
             dec_logits = self.predictor(dec_embed)
 
         dec_probs = layers.softmax(dec_logits, axis=-1)
+        #knw_len=None
+        #src_token = None
+        #src_type = None
+        if self.use_pointer_network:
+            
+            knowledge_embed = embed[:,:-tgt_len]
+            #print(knowledge_embed.shape)
+            knowledge_embed = knowledge_embed[:,-knw_len:]
+            know_token = src_token[:,-knw_len:]
+            #print("kwn_len",knw_len)
+            #print("src_type",src_type.shape)
+            typs_kno = src_type[:,:src_len][:,-knw_len:].numpy().astype('float32')
+            #print("shape_types_kno",typs_kno.shape)
+            typs_kno[typs_kno!=2] = 0
+            typs_kno[typs_kno==2] = 1
+            typs_kno2 = src_type[:,:src_len][:,-knw_len:].numpy().astype('float32')
+            typs_kno2[typs_kno!=2] = -1e10
+            typs_kno2[typs_kno==2] = 0
+            typs_kno = fluid.dygraph.to_variable(typs_kno)
+            typs_kno2 = fluid.dygraph.to_variable(typs_kno2)
+            typs_kno = layers.squeeze(input=typs_kno, axes=[2])
+            typs_kno2 = layers.squeeze(input=typs_kno2, axes=[2])
+            typs_kno = F.unsqueeze(typs_kno, [1])
+            typs_kno = layers.expand(typs_kno, [1, dec_embed.shape[1], 1])
+            typs_kno2 = F.unsqueeze(typs_kno2, [1])
+            typs_kno2 = layers.expand(typs_kno2, [1, dec_embed.shape[1], 1])
+            typs_kno.stop_gradient =True
+            typs_kno2.stop_gradient =True
+            #print("dec_emb",dec_embed.shape)
+            #print("knowel_emd",knowledge_embed.shape)
+            pointer_logits = layers.matmul(
+                x = dec_embed,
+                y = knowledge_embed,
+                transpose_y=True
+            )
+            pointer_logits = layers.elementwise_mul(pointer_logits, typs_kno)#x = [1, 15, 230],y=[1,230]
+            pointer_logits = layers.elementwise_add(pointer_logits, typs_kno2)
+            pointer_probs = layers.softmax(pointer_logits,axis=-1)
+            pointer_probs = layers.elementwise_mul(pointer_probs, typs_kno)
+            
+            know_onehot = layers.one_hot(know_token, self.num_token_embeddings)#batch_size,know_len,vocab_size
+            know_onehot.stop_gradient =True
 
+            pointer_probs = layers.matmul(x=pointer_probs,y = know_onehot)#X's shape: [1, 15, 230], Y's shape: [1, 175, 30522]
+            #print("prbos,pointer_probs",dec_probs.shape,pointer_probs.shape)
+            #dec_probs = layers.elementwise_add(x=self.lada[0]*dec_probs,y=(1-self.lada[1])*pointer_probs)
+            dec_probs = layers.elementwise_add(x=dec_probs*0.7,y=pointer_probs*0.3)
+            #self.lada = self.lada/layers.reduce_sum(self.lada) 
         return latent_embed, dec_probs
 
     def _forward(self, inputs, is_training):
         """ Real forward process of model in different mode(train/test). """
         outputs = {}
+        knw_max_len = inputs["k_max_len"]
 
         src_token = inputs["src_token"]
         src_mask = inputs["src_mask"]
         src_pos = inputs["src_pos"]
         src_type = inputs["src_type"]
         src_turn = inputs["src_turn"]
-
+        #print("src_typppppp",src_type.shape)
+        #print(src_type.numpy())
         tgt_token = inputs["tgt_token"][:, :-1]
         tgt_mask = inputs["tgt_mask"][:, :-1]
         tgt_pos = inputs["tgt_pos"][:, :-1]
@@ -456,21 +536,22 @@ class UnifiedTransformer(ModelBase):
                 outputs["neg_probs"] = neg_probs
 
             if is_training:
-                z = F.gumbel_softmax(post_logits, self.tau)
+                z = F.gumbel_softmax(post_logits, self.tau) #gumbel_softmax的作用
             else:
                 indices = layers.argmax(post_logits, axis=1)
                 z = layers.one_hot(F.unsqueeze(indices, [1]), self.num_latent)
-            latent_embeddings = self.latent_embeddings
-            latent_embed = layers.matmul(z, latent_embeddings)
+            latent_embeddings = self.latent_embeddings #[latend_num,hidden_size]
+            latent_embed = layers.matmul(z, latent_embeddings) #[batch_size,hidden_size]
             outputs["latent_embed"] = latent_embed
         else:
             latent_embed = None
-
+       
         latent_embed, dec_probs = self._generation_network(
-            input_mask, embed, batch_size, src_len, tgt_len, latent_embed)
+            input_mask, embed, batch_size, src_len, tgt_len, latent_embed,knw_max_len,src_type,src_token)
         outputs["dec_probs"] = dec_probs
-
-        if self.num_latent > 0 and self.with_bow:
+       
+           
+        if self.num_latent > 0 and self.with_bow: #看这块是否可以修改成指针网络的预测方式。
             if self.two_layer_predictor:
                 latent_embed = self.pre_bow_predictor(latent_embed)
             bow_logits = self.bow_predictor(latent_embed)
@@ -479,13 +560,36 @@ class UnifiedTransformer(ModelBase):
 
         return outputs
 
-    def _collect_metrics(self, inputs, outputs):
+    def find_the_common_seq(self,seq1,seq2):
+        '''左闭右闭
+        seq1:knowledge_seq
+        seq2:target_seq
+        '''
+        dic_knw_label = {}
+        for idx in range(len(seq2)):
+            dic_knw_label[idx] = (-1,0) #-1为默认label，0是长度
+        i,j=0,0
+        while i<len(seq1):
+            while j <len(seq2):
+                if seq1[i] == seq2[j]:
+                    t = 1
+                    while (i+t)<seq1 and (j+t)<seq2 and seq1[i+t] == seq2[j+t]:t+=1
+                    for z in range(t):
+                        if j not in dic_knw_label:
+                            pass
+                        else:
+                            pass
+
+
+    
+
+    def _collect_metrics(self, inputs, outputs): #loss计算
         """ Calculate loss function by using inputs and outputs. """
         metrics = {}
 
         tgt_len = layers.reduce_sum(layers.reduce_sum(inputs["tgt_mask"], dim=1) - 1)
         tgt_len.stop_gradient = True
-
+        # generator loss
         label = inputs["tgt_token"][:, 1:]
         if self.label_smooth > 0:
             one_hot_label = layers.one_hot(label, self.num_token_embeddings)
@@ -502,9 +606,12 @@ class UnifiedTransformer(ModelBase):
         metrics["token_nll"] = token_nll
         loss = nll
 
+        # pointer losee
+
+
         if self.num_latent > 0 and self.with_bow:
-            bow_probs = F.unsqueeze(outputs["bow_probs"], [1])
-            bow_probs = layers.expand(bow_probs, [1, label.shape[1], 1])
+            bow_probs = F.unsqueeze(outputs["bow_probs"], [1])#[batch_size,vocab_size] ,label[batch_size,seq_len]
+            bow_probs = layers.expand(bow_probs, [1, label.shape[1], 1])#[batch_size,sen_len,vocab_size]
             if self.label_smooth > 0:
                 bow = layers.cross_entropy(bow_probs, smooth_label, soft_label=True,
                                            ignore_index=self.padding_idx)
@@ -559,18 +666,18 @@ class UnifiedTransformer(ModelBase):
         mask = self._create_mask(src_mask, append_head=self.num_latent > 0)
 
         if self.num_latent > 0:
-            src_embed = F.unsqueeze(src_embed, [1])
+            src_embed = F.unsqueeze(src_embed, [1]) #[batch_size,1,seq_len,hidden_size]
             src_embed = layers.expand(src_embed, [1, self.num_latent, 1, 1])
-            src_embed = layers.reshape(src_embed, [-1, seq_len, self.hidden_dim])
+            src_embed = layers.reshape(src_embed, [-1, seq_len, self.hidden_dim])#[batch_size*num_latent,seq_len,hidden_size]
 
-            latent_embed = self.latent_embeddings
-            latent_embed = F.unsqueeze(latent_embed, [1])
-            latent_embed = layers.expand(latent_embed, [batch_size, 1, 1])
+            latent_embed = self.latent_embeddings #[num_latent,hdd_size]
+            latent_embed = F.unsqueeze(latent_embed, [1])#[num_latent,1,hdd_size]
+            latent_embed = layers.expand(latent_embed, [batch_size, 1, 1]) #[batch_size*num_latent,seq_len,hidden_size]
             latent_embed = self.embed_layer_norm(latent_embed)
 
             enc_out = layers.concat([latent_embed, src_embed], axis=1)
 
-            mask = F.unsqueeze(mask, [1])
+            mask = F.unsqueeze(mask, [1]) # batch_size,1,seq_len,seq_len
             mask = layers.expand(mask, [1, self.num_latent, 1, 1])
             mask = layers.reshape(mask, [-1, seq_len + 1, seq_len + 1])
         else:
