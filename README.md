@@ -71,9 +71,18 @@
     - `Transform_to_plato_form.py`进行转换格式
     - `Ace_Dialog/shuffle.py`进行shuffle。
     - `merge_all.py`进行合并数据
+
+## 20211021评测结果
+- 20 epoch DailyDialog :BLEU_1-0.388   BLEU_2-0.304   INTRA_DIST_1-0.936   INTRA_DIST_2-0.987   INTER_DIST_1-0.055   INTER_DIST_2-0.303   LEN-10.993   TIME-34869.708
+- 7 epoch AceDialog and plato and AceDialog BLEU_1-0.417   BLEU_2-0.329   INTRA_DIST_1-0.936   INTRA_DIST_2-0.983   INTER_DIST_1-0.139   INTER_DIST_2-0.335   LEN-10.360   TIME-1835.647
+- 27 epoch and plato and AceDialog BLEU_1-0.594   BLEU_2-0.486   INTRA_DIST_1-0.929   INTRA_DIST_2-0.995   INTER_DIST_1-0.134   INTER_DIST_2-0.362   LEN-12.341   TIME-1690.157
+- 20 epoch and plato  and AceDialog BLEU_1-0.415   BLEU_2-0.354   INTRA_DIST_1-0.966   INTRA_DIST_2-0.966   INTER_DIST_1-0.165   INTER_DIST_2-0.361   LEN-7.407   TIME-1507.834
+- 47 epoch and plato and AceDialog   BLEU_1-0.960   BLEU_2-0.863   INTRA_DIST_1-0.932   INTRA_DIST_2-0.981   INTER_DIST_1-0.168   INTER_DIST_2-0.457   LEN-11.346   TIME-1595.763
+
+## 20211107
+- 记录到一个bug,创建的变量参数必须在forward里面用到，否则就会出现未分配内存的情况。
+
 # 文件说明
-## 20211021
-- DailyDialog :BLEU_1-0.388   BLEU_2-0.304   INTRA_DIST_1-0.936   INTRA_DIST_2-0.987   INTER_DIST_1-0.055   INTER_DIST_2-0.303   LEN-10.993   TIME-34869.708
 
 #### `chat.py`:对话文件，生成的对话聊天
 #### `../data_en/Baidu_text_transAPI.py`:将中文数据翻译成英文
@@ -90,3 +99,8 @@
 - 给出关于某个知识的三元组信息，一问一答回复。
 - 接入翻译API，我说一句中文，翻译成英文。
 - 存到某一个文件中。
+
+# idea：
+- 把cbow变成预测是否是实体，或者有没有更换实体的信息。
+- 加入 pointer network
+- 直接用 pointer network 指向送入网络的知识不太好实现，可以把知识外部化。再思考一下两个方案的可行性。
