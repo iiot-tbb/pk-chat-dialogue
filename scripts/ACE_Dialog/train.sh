@@ -1,22 +1,22 @@
 #!/bin/bash
 set -ux
 
-SAVE_DIR=outputs/ACE_Dialog
+SAVE_DIR=outputs/ACE_Dialog_ceshi
 VOCAB_PATH=model/Bert/vocab.txt
 DATA_DIR=data/ACE_Dialog
-#INIT_CHECKPOINT=model/PLATO
-INIT_CHECKPOINT=outputs/DDE_Dialog/best.model
+INIT_CHECKPOINT=model/PLATO
+#INIT_CHECKPOINT=outputs/ACE_Dialog/best.model
 DATA_TYPE=multi_knowledge
-USE_VISUALDL=false
+USE_VISUALDL=true
 
 # CUDA environment settings.
 export CUDA_VISIBLE_DEVICES=1
 
 # Paddle environment settings.
-export FLAGS_fraction_of_gpu_memory_to_use=0.8
+export FLAGS_fraction_of_gpu_memory_to_use=0.7
 export FLAGS_eager_delete_scope=True
 export FLAGS_eager_delete_tensor_gb=0.0
-LD_LIBRARY_PATH=~/miniconda3/envs/plato_ceshi/lib/
+LD_LIBRARY_PATH=~/miniconda3/envs/plato_visual/lib/
 export LD_LIBRARY_PATH
 
 python -u \
@@ -26,7 +26,7 @@ python -u \
     --data_type $DATA_TYPE
 
 if [[ "$USE_VISUALDL" = true ]]; then
-    visualdl --logdir=$SAVE_DIR/summary --port=8083 --host=`hostname` &
+    visualdl --logdir=$SAVE_DIR/summary --port=8091 --host=`hostname` &
     VISUALDL_PID=$!
 fi
 

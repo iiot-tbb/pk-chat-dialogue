@@ -1,19 +1,19 @@
 #!/bin/bash
 set -ux
 
-SAVE_DIR=outputs/DDE.infer
+SAVE_DIR=outputs/ACE_auto_context.infer
 VOCAB_PATH=model/Bert/vocab.txt
-DATA_DIR=data/DDE_Dialog
-INIT_CHECKPOINT=outputs/DDE_Dialog/best.model
+DATA_DIR=data/ACE_Dialog
+INIT_CHECKPOINT=outputs/ACE_Dialog_pointer_ceshi/best.model
 DATA_TYPE=multi_knowledge
 
 # CUDA environment settings.
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=3
 LD_LIBRARY_PATH=~/miniconda3/envs/plato/lib/
 export LD_LIBRARY_PATH
 
 # Paddle environment settings.
-export FLAGS_fraction_of_gpu_memory_to_use=0.2
+export FLAGS_fraction_of_gpu_memory_to_use=0.9
 export FLAGS_eager_delete_scope=True
 export FLAGS_eager_delete_tensor_gb=0.0
 
@@ -31,6 +31,10 @@ python -u \
     --data_type $DATA_TYPE \
     --batch_size 1 \
     --num_type_embeddings 3 \
-    --use_discriminator true \
+    --use_discriminator false \
     --init_checkpoint $INIT_CHECKPOINT \
-    --save_dir $SAVE_DIR
+    --save_dir $SAVE_DIR\
+    --bidirectional_context true \
+    --use_pointer_network true
+    #--init_checkpoint $INIT_CHECKPOINT \
+    

@@ -1,18 +1,20 @@
 #!/bin/bash
 set -ux
 
-SAVE_DIR=outputs/ACE_Dialog
+SAVE_DIR=outputs/DSTC_Dialog_gpt #1
 VOCAB_PATH=model/Bert/vocab.txt
-DATA_DIR=data/ACE_Dialog
+DATA_DIR=data/DSTC7_AVSD
 INIT_CHECKPOINT=model/PLATO
+#INIT_CHECKPOINT=outputs/ACE_Dialog/best.model
 DATA_TYPE=multi_knowledge
-USE_VISUALDL=false
+USE_VISUALDL=true
 
 # CUDA environment settings.
-export CUDA_VISIBLE_DEVICES=0,1,2
+export CUDA_VISIBLE_DEVICES=0,1,2 #2
+#export CUDA_VISIBLE_DEVICES=2
 
 # Paddle environment settings.
-export FLAGS_fraction_of_gpu_memory_to_use=0.8
+export FLAGS_fraction_of_gpu_memory_to_use=0.9
 export FLAGS_eager_delete_scope=True
 export FLAGS_eager_delete_tensor_gb=0.0
 LD_LIBRARY_PATH=~/miniconda3/envs/plato/lib/
@@ -27,7 +29,7 @@ if [[ ! -e $DATA_DIR/dial.train.jsonl ]]; then
 fi
 
 if [[ "$USE_VISUALDL" = true ]]; then
-    visualdl --logdir=$SAVE_DIR/summary --port=8083 --host=`hostname` &
+    visualdl --logdir=$SAVE_DIR/summary --port=8091 --host=0.0.0.0 &
     VISUALDL_PID=$!
 fi
 
@@ -41,17 +43,19 @@ python -m \
     --vocab_path $VOCAB_PATH \
     --data_dir $DATA_DIR \
     --data_type $DATA_TYPE \
-    --batch_size 1 \
+    --batch_size 2 \
     --valid_steps 2000 \
     --num_type_embeddings 3 \
-    --use_discriminator true \
+    --use_discriminator false \
     --num_epoch 20 \
     --lr 1e-5 \
     --save_checkpoint false \
     --save_summary $USE_VISUALDL \
+    --save_dir $SAVE_DIR \
+    --bidirectional_context false \
     --init_checkpoint $INIT_CHECKPOINT \
-    --save_dir $SAVE_DIR
-
+    --use_pointer_network false
+    
 if [[ $USE_VISUALDL = true ]]; then
     kill $VISUALDL_PID
 fi
