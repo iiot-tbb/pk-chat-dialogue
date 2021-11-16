@@ -208,8 +208,8 @@ class UnifiedTransformer(ModelBase):
         #        shape=[1, 1, self.hidden_dim],
         #        dtype=self._dtype)
         if self.use_pointer_network:
-            pass
-            #self.lada = layers.create_parameter(name='lambda_point',shape=[2],default_initializer=fluid.initializer.NumpyArrayInitializer(np.array([0.5,0.5])),dtype=self._dtype)
+            #pass
+            self.lada = layers.create_parameter(name='lambda_point',shape=[1],default_initializer=fluid.initializer.NumpyArrayInitializer(np.array([0.0])),dtype=self._dtype)
         
         if self.num_latent > 0:
             self.mask_embed = self.create_parameter(
@@ -448,50 +448,100 @@ class UnifiedTransformer(ModelBase):
         #knw_len=None
         #src_token = None
         #src_type = None
-        if self.use_pointer_network:
+        # if self.use_pointer_network:
             
-            knowledge_embed = embed[:,:-tgt_len]
+        #     knowledge_embed = dec_embed[:,:-tgt_len]
+        #     #print(knowledge_embed.shape)
+        #     knowledge_embed = knowledge_embed[:,-knw_len:]
+        #     know_token = src_token[:,-knw_len:]
+        #     #print("kwn_len",knw_len)
+        #     #print("src_type",src_type.shape)
+        #     typs_kno = src_type[:,:src_len][:,-knw_len:].numpy().astype('float32')
+        #     #print("shape_types_kno",typs_kno.shape)
+        #     typs_kno[typs_kno!=2] = 0
+        #     typs_kno[typs_kno==2] = 1
+        #     typs_kno2 = src_type[:,:src_len][:,-knw_len:].numpy().astype('float32')
+        #     typs_kno2[typs_kno!=2] = -1e10
+        #     typs_kno2[typs_kno==2] = 0
+        #     typs_kno = fluid.dygraph.to_variable(typs_kno)
+        #     typs_kno2 = fluid.dygraph.to_variable(typs_kno2)
+        #     typs_kno = layers.squeeze(input=typs_kno, axes=[2])
+        #     typs_kno2 = layers.squeeze(input=typs_kno2, axes=[2])
+        #     typs_kno = F.unsqueeze(typs_kno, [1])
+        #     typs_kno = layers.expand(typs_kno, [1, dec_embed.shape[1], 1])
+        #     typs_kno2 = F.unsqueeze(typs_kno2, [1])
+        #     typs_kno2 = layers.expand(typs_kno2, [1, dec_embed.shape[1], 1])
+        #     typs_kno.stop_gradient =True
+        #     typs_kno2.stop_gradient =True
+        #     #print("dec_emb",dec_embed.shape)
+        #     #print("knowel_emd",knowledge_embed.shape)
+        #     pointer_logits = layers.matmul(
+        #         x = dec_embed,
+        #         y = knowledge_embed,
+        #         transpose_y=True
+        #     )
+        #     pointer_logits = layers.elementwise_mul(pointer_logits, typs_kno)#x = [1, 15, 230],y=[1,230]
+        #     pointer_logits = layers.elementwise_add(pointer_logits, typs_kno2)
+        #     pointer_probs = layers.softmax(pointer_logits,axis=-1)
+        #     pointer_probs = layers.elementwise_mul(pointer_probs, typs_kno)
+            
+        #     know_onehot = layers.one_hot(know_token, self.num_token_embeddings)#batch_size,know_len,vocab_size
+        #     know_onehot.stop_gradient =True
+        #     lada = fluid.layers.sigmoid(self.lada)
+        #     pointer_probs = layers.matmul(x=pointer_probs,y = know_onehot)#X's shape: [1, 15, 230], Y's shape: [1, 175, 30522]
+        #     #print("prbos,pointer_probs",dec_probs.shape,pointer_probs.shape)
+        #     dec_probs = layers.elementwise_add(x=self.lada[0]*dec_probs,y=(1-self.lada[1])*pointer_probs) #auto
+        #     dec_probs = layers.elementwise_add(x=dec_probs*lada,y=pointer_probs*(1-lada)) #auto
+        #     #dec_probs = layers.elementwise_add(x=dec_probs,y=pointer_probs) #55
+        #     #self.lada = self.lada/layers.reduce_sum(self.lada) 
+        if self.use_pointer_network:
+            '''
+            把指针指向knowledge改为指向整个context。
+            '''
+            #knowledge_embed = dec_embed[:,:-tgt_len]
+            context_embed = embed[:,:-tgt_len]
             #print(knowledge_embed.shape)
-            knowledge_embed = knowledge_embed[:,-knw_len:]
-            know_token = src_token[:,-knw_len:]
+            context_token = src_token.numpy()
+            #print(context_token.shape)
             #print("kwn_len",knw_len)
             #print("src_type",src_type.shape)
-            typs_kno = src_type[:,:src_len][:,-knw_len:].numpy().astype('float32')
+            typs_context = src_type.numpy().astype('float32')
             #print("shape_types_kno",typs_kno.shape)
-            typs_kno[typs_kno!=2] = 0
-            typs_kno[typs_kno==2] = 1
-            typs_kno2 = src_type[:,:src_len][:,-knw_len:].numpy().astype('float32')
-            typs_kno2[typs_kno!=2] = -1e10
-            typs_kno2[typs_kno==2] = 0
-            typs_kno = fluid.dygraph.to_variable(typs_kno)
-            typs_kno2 = fluid.dygraph.to_variable(typs_kno2)
-            typs_kno = layers.squeeze(input=typs_kno, axes=[2])
-            typs_kno2 = layers.squeeze(input=typs_kno2, axes=[2])
-            typs_kno = F.unsqueeze(typs_kno, [1])
-            typs_kno = layers.expand(typs_kno, [1, dec_embed.shape[1], 1])
-            typs_kno2 = F.unsqueeze(typs_kno2, [1])
-            typs_kno2 = layers.expand(typs_kno2, [1, dec_embed.shape[1], 1])
-            typs_kno.stop_gradient =True
-            typs_kno2.stop_gradient =True
+            typs_context[context_token==0] = 0
+            typs_context[context_token!=0] = 1
+            typs_context2 = src_type.numpy().astype('float32')
+            typs_context2[context_token==0] = -1e10
+            typs_context2[context_token!=0] = 0
+            typs_context = fluid.dygraph.to_variable(typs_context)
+            typs_context2 = fluid.dygraph.to_variable(typs_context2)
+            typs_context = layers.squeeze(input=typs_context, axes=[2])
+            typs_context2 = layers.squeeze(input=typs_context2, axes=[2])
+            typs_context = F.unsqueeze(typs_context, [1])
+            typs_context = layers.expand(typs_context, [1, dec_embed.shape[1], 1])
+            typs_context2 = F.unsqueeze(typs_context2, [1])
+            typs_context2 = layers.expand(typs_context2, [1, dec_embed.shape[1], 1])
+            typs_context.stop_gradient =True
+            typs_context2.stop_gradient =True
             #print("dec_emb",dec_embed.shape)
             #print("knowel_emd",knowledge_embed.shape)
             pointer_logits = layers.matmul(
                 x = dec_embed,
-                y = knowledge_embed,
+                y = context_embed,
                 transpose_y=True
             )
-            pointer_logits = layers.elementwise_mul(pointer_logits, typs_kno)#x = [1, 15, 230],y=[1,230]
-            pointer_logits = layers.elementwise_add(pointer_logits, typs_kno2)
+            pointer_logits = layers.elementwise_mul(pointer_logits, typs_context)#x = [1, 15, 230],y=[1,230]
+            pointer_logits = layers.elementwise_add(pointer_logits, typs_context2)
             pointer_probs = layers.softmax(pointer_logits,axis=-1)
-            pointer_probs = layers.elementwise_mul(pointer_probs, typs_kno)
-            
-            know_onehot = layers.one_hot(know_token, self.num_token_embeddings)#batch_size,know_len,vocab_size
+            pointer_probs = layers.elementwise_mul(pointer_probs, typs_context)
+            context_token = fluid.dygraph.to_variable(context_token) 
+            know_onehot = layers.one_hot(context_token, self.num_token_embeddings)#batch_size,know_len,vocab_size
             know_onehot.stop_gradient =True
-
+            lada = fluid.layers.sigmoid(self.lada)
             pointer_probs = layers.matmul(x=pointer_probs,y = know_onehot)#X's shape: [1, 15, 230], Y's shape: [1, 175, 30522]
             #print("prbos,pointer_probs",dec_probs.shape,pointer_probs.shape)
-            #dec_probs = layers.elementwise_add(x=self.lada[0]*dec_probs,y=(1-self.lada[1])*pointer_probs)
-            dec_probs = layers.elementwise_add(x=dec_probs*0.7,y=pointer_probs*0.3)
+            #dec_probs = layers.elementwise_add(x=self.lada[0]*dec_probs,y=(1-self.lada[1])*pointer_probs) #auto
+            dec_probs = layers.elementwise_add(x=dec_probs*lada,y=pointer_probs*(1-lada)) #auto
+            #dec_probs = layers.elementwise_add(x=dec_probs,y=pointer_probs) #55
             #self.lada = self.lada/layers.reduce_sum(self.lada) 
         return latent_embed, dec_probs
 
