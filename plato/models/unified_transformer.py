@@ -93,8 +93,10 @@ class UnifiedTransformer(ModelBase):
                            help="The weight decay for Adam.")
         group.add_argument("--max_grad_norm", type=float, default=None,
                            help="The maximum norm of gradient.")
-        group.add_argument("--use_pointer_network",type =str2bool,default = False,
+        group.add_argument("--use_pointer_network",type =int,default = -1,
                            help = "use pointer network to process knowledge") #新加入判断是否采用指针网络
+        group.add_argument("--use_topic_trans_judge",type = str2bool,default = False,
+                            help = "use topic transfer to judge whether to get the new knowledge") #新加入判别部分判断是否需要转换主题。
         return group
 
     def __init__(self, name_scope, hparams, generator, dtype="float32"):
@@ -123,7 +125,8 @@ class UnifiedTransformer(ModelBase):
         self.label_smooth = hparams.label_smooth
         self.initializer_range = hparams.initializer_range
         self.use_pointer_network = hparams.use_pointer_network
-        
+        self.use_topic_trans = hparams.use_topic_trans_judge
+
         self.embedder = Embedder(self.full_name(),
                                  self.hidden_dim,
                                  self.num_token_embeddings,
@@ -166,7 +169,7 @@ class UnifiedTransformer(ModelBase):
         if self.two_layer_predictor: #cbow预测
             self.pre_predictor = FC(name_scope=self.full_name() + ".pre_predictor",
                                     size=self.hidden_dim,
-                                    num_flatten_dims=2,
+                                    num_flatten_dims=2, #假设维度为[4,5,6,7,8],则flatten后为[4*5,6*7*8]
                                     act="gelu")
             if self.num_latent > 0 and self.with_bow:
                 self.pre_bow_predictor = FC(name_scope=self.full_name() + ".pre_bow_predictor",
@@ -207,7 +210,7 @@ class UnifiedTransformer(ModelBase):
         #            initializer=fluid.initializer.NormalInitializer(scale=self.initializer_range)),
         #        shape=[1, 1, self.hidden_dim],
         #        dtype=self._dtype)
-        if self.use_pointer_network:
+        if self.use_pointer_network == 0:
             #pass
             self.lada = layers.create_parameter(name='lambda_point',shape=[1],default_initializer=fluid.initializer.NumpyArrayInitializer(np.array([0.0])),dtype=self._dtype)
         
@@ -403,7 +406,7 @@ class UnifiedTransformer(ModelBase):
 
         return pos_probs, neg_probs
 
-    def _generation_network(self, input_mask, embed, batch_size, src_len, tgt_len, latent_embed,knw_len,src_type,src_token):
+    def _generation_network(self, input_mask, embed, batch_size, src_len, tgt_len, latent_embed,knw_len,src_type,src_token,tgt_token):
         """ Basic generation network implement. """
         #print(embed.shape)
         #print(knw_len)
@@ -494,24 +497,31 @@ class UnifiedTransformer(ModelBase):
         #     dec_probs = layers.elementwise_add(x=dec_probs*lada,y=pointer_probs*(1-lada)) #auto
         #     #dec_probs = layers.elementwise_add(x=dec_probs,y=pointer_probs) #55
         #     #self.lada = self.lada/layers.reduce_sum(self.lada) 
-        if self.use_pointer_network:
+        if self.use_pointer_network==0:
             '''
             把指针指向knowledge改为指向整个context。
             '''
             #knowledge_embed = dec_embed[:,:-tgt_len]
             context_embed = embed[:,:-tgt_len]
+           
+            
             #print(knowledge_embed.shape)
-            context_token = src_token.numpy()
-            #print(context_token.shape)
+            context_token = src_token.numpy() #batchsize seq_len 1
+            #print(context_token.shape) #batchsize seq_len 1
             #print("kwn_len",knw_len)
-            #print("src_type",src_type.shape)
+            #print("src_type",src_type.shape) #batchsize seq_len 1
+            ###
+            ### target_mean
+            ###
             typs_context = src_type.numpy().astype('float32')
             #print("shape_types_kno",typs_kno.shape)
-            typs_context[context_token==0] = 0
+            typs_context[context_token==0] = 0 #batch_size,seq_len,1
             typs_context[context_token!=0] = 1
+            
             typs_context2 = src_type.numpy().astype('float32')
             typs_context2[context_token==0] = -1e10
             typs_context2[context_token!=0] = 0
+
             typs_context = fluid.dygraph.to_variable(typs_context)
             typs_context2 = fluid.dygraph.to_variable(typs_context2)
             typs_context = layers.squeeze(input=typs_context, axes=[2])
@@ -522,14 +532,15 @@ class UnifiedTransformer(ModelBase):
             typs_context2 = layers.expand(typs_context2, [1, dec_embed.shape[1], 1])
             typs_context.stop_gradient =True
             typs_context2.stop_gradient =True
-            #print("dec_emb",dec_embed.shape)
-            #print("knowel_emd",knowledge_embed.shape)
+         
+            
+            
             pointer_logits = layers.matmul(
                 x = dec_embed,
                 y = context_embed,
                 transpose_y=True
             )
-            pointer_logits = layers.elementwise_mul(pointer_logits, typs_context)#x = [1, 15, 230],y=[1,230]
+            pointer_logits = layers.elementwise_mul(pointer_logits, typs_context)#x = [1, 15, 230],y=[1,15,230]
             pointer_logits = layers.elementwise_add(pointer_logits, typs_context2)
             pointer_probs = layers.softmax(pointer_logits,axis=-1)
             pointer_probs = layers.elementwise_mul(pointer_probs, typs_context)
@@ -541,8 +552,116 @@ class UnifiedTransformer(ModelBase):
             #print("prbos,pointer_probs",dec_probs.shape,pointer_probs.shape)
             #dec_probs = layers.elementwise_add(x=self.lada[0]*dec_probs,y=(1-self.lada[1])*pointer_probs) #auto
             dec_probs = layers.elementwise_add(x=dec_probs*lada,y=pointer_probs*(1-lada)) #auto
+            #print(att.shape)
+            #print(dec_probs.shape)
+            #dec_probs = layers.elementwise_add(x=dec_probs,y=pointer_probs) #55
+            #self.lada = self.lada/layers.reduce_sum(self.lada)
+
+        if self.use_pointer_network==1:
+            '''
+            和上面的 0 相比，它的pointer loss的权重计算方式发生了改变。
+            '''
+            #knowledge_embed = dec_embed[:,:-tgt_len]
+            context_embed = embed[:,:-tgt_len]
+           
+            
+            #print(knowledge_embed.shape)
+            context_token = src_token.numpy() #batchsize seq_len 1
+            #print(context_token.shape) #batchsize seq_len 1
+            #print("kwn_len",knw_len)
+            #print("src_type",src_type.shape) #batchsize seq_len 1
+            ###
+            ### target_mean
+            ###
+            typs_context = src_type.numpy().astype('float32')
+            #tgt_token_mask = tgt_token.numpy().astype("float32")
+            #tgt_token_mask[tgt_token_mask!=0] = 1
+            #tgt_token_mask[tgt_token_mask==0] = 0
+            #tgt_token_mask =fluid.dygraph.to_variable(tgt_token_mask)
+            #tgt_token_mask.stop_gradient = True
+            #tgt_token_mask_usq = layers.expand(tgt_token_mask,[1,1,self.hidden_dim]) 
+            #tgt_token_mask = layers.squeeze(input=tgt_token_mask,axes=[2])
+            #tgt_len = layers.reduce_mean(tgt_token_mask,dim=-1,keep_dim=True)
+            #tgt_len = F.unsqueeze(tgt_len,[1])
+            #tgt_embeding_notpad = layers.elementwise_mul(dec_embed,tgt_token_mask_usq)
+            #tgt_embedding_mean = layers.elementwise_div(layers.reduce_sum(tgt_embeding_notpad,dim=1,keep_dim=True),tgt_len)
+            #print("tgt_mean",tgt_embedding_mean.numpy())
+            
+            #print("shape_types_kno",typs_kno.shape)
+            typs_context[context_token==0] = 0 #batch_size,seq_len,1
+            typs_context[context_token!=0] = 1
+            
+            typs_context2 = src_type.numpy().astype('float32')
+            typs_context2[context_token==0] = -1e10
+            typs_context2[context_token!=0] = 0
+
+            typs_context = fluid.dygraph.to_variable(typs_context)
+            typs_context2 = fluid.dygraph.to_variable(typs_context2)
+            context_padding = layers.expand(typs_context,[1,1,self.hidden_dim]) # lamda_att
+            typs_context = layers.squeeze(input=typs_context, axes=[2])
+            #
+            #context_mean
+            #
+            context_len = layers.reduce_sum(typs_context,dim = 1,keep_dim=True) # batch_size,1 # lamda_att
+            #print("context_len_shape",context_len.shape)
+            #print("context_len",context_len.numpy())
+            context_len = F.unsqueeze(context_len,[1])
+            typs_context2 = layers.squeeze(input=typs_context2, axes=[2])
+            typs_context = F.unsqueeze(typs_context, [1])
+            typs_context = layers.expand(typs_context, [1, dec_embed.shape[1], 1])
+            typs_context2 = F.unsqueeze(typs_context2, [1])
+            typs_context2 = layers.expand(typs_context2, [1, dec_embed.shape[1], 1])
+            typs_context.stop_gradient =True
+            typs_context2.stop_gradient =True
+            context_len.stop_gradient = True #lamda_att
+            context_padding.stop_gradient = True # lamda_att
+            context_embed_notpad = layers.elementwise_mul(context_embed,context_padding) #lamda_att
+            #context_len = layers.expand(context_len,[1,1,1])
+            #print(context_embed_notpad.numpy())
+            context_embed_mean = layers.elementwise_div(layers.reduce_sum(context_embed_notpad,dim=1,keep_dim=True),context_len)#batch_size,1, dim #lambda_att
+            #print("context_embed",context_embed_mean.numpy())
+            #print("dec_embede",dec_embed)
+            #
+            # attent
+            #
+            att = layers.matmul(
+                x = dec_embed,
+                y = context_embed_mean,
+                transpose_y=True
+            )*self.hidden_dim**-0.5
+            #atten_tgt_context = layers.reduce_mean(layers.elementwise_mul(tgt_embedding_mean,context_embed_mean)*self.hidden_dim**-0.5,dim=-1,keep_dim=True) #batchsize,1
+            #print(att.numpy())
+            #print(att.shape)
+            #print(atten_tgt_context.numpy())
+            att = fluid.layers.sigmoid(att)
+            #print(att.numpy())
+            #print(att.numpy())
+            #print(att.shape)
+            #print("dec_emb",dec_embed.shape)
+            #print("knowel_emd",knowledge_embed.shape)
+            pointer_logits = layers.matmul(
+                x = dec_embed,
+                y = context_embed,
+                transpose_y=True
+            )
+            pointer_logits = layers.elementwise_mul(pointer_logits, typs_context)#x = [1, 15, 230],y=[1,15,230]
+            pointer_logits = layers.elementwise_add(pointer_logits, typs_context2)
+            pointer_probs = layers.softmax(pointer_logits,axis=-1)
+            pointer_probs = layers.elementwise_mul(pointer_probs, typs_context)
+            context_token = fluid.dygraph.to_variable(context_token) 
+            know_onehot = layers.one_hot(context_token, self.num_token_embeddings)#batch_size,know_len,vocab_size
+            know_onehot.stop_gradient =True
+            #lada = fluid.layers.sigmoid(self.lada)
+            pointer_probs = layers.matmul(x=pointer_probs,y = know_onehot)#X's shape: [1, 15, 230], Y's shape: [1, 175, 30522]
+            #print("prbos,pointer_probs",dec_probs.shape,pointer_probs.shape)
+            #dec_probs = layers.elementwise_add(x=self.lada[0]*dec_probs,y=(1-self.lada[1])*pointer_probs) #auto
+            #dec_probs = layers.elementwise_add(x=dec_probs*lada,y=pointer_probs*(1-lada)) #auto
+            #print(att.shape)
+            dec_probs = layers.elementwise_add(x=dec_probs*(1-att),y=pointer_probs*att) #auto
+            #print(dec_probs.shape)
             #dec_probs = layers.elementwise_add(x=dec_probs,y=pointer_probs) #55
             #self.lada = self.lada/layers.reduce_sum(self.lada) 
+             
         return latent_embed, dec_probs
 
     def _forward(self, inputs, is_training):
@@ -597,11 +716,11 @@ class UnifiedTransformer(ModelBase):
             latent_embed = None
        
         latent_embed, dec_probs = self._generation_network(
-            input_mask, embed, batch_size, src_len, tgt_len, latent_embed,knw_max_len,src_type,src_token)
+            input_mask, embed, batch_size, src_len, tgt_len, latent_embed,knw_max_len,src_type,src_token,tgt_token)
         outputs["dec_probs"] = dec_probs
        
            
-        if self.num_latent > 0 and self.with_bow: #看这块是否可以修改成指针网络的预测方式。
+        if self.num_latent > 0 and self.with_bow: 
             if self.two_layer_predictor:
                 latent_embed = self.pre_bow_predictor(latent_embed)
             bow_logits = self.bow_predictor(latent_embed)
@@ -700,7 +819,8 @@ class UnifiedTransformer(ModelBase):
     def _init_state(self, inputs):
         """ Initialize decode state. """
         state = {}
-
+        
+        #初始化状态
         src_token = inputs["src_token"]
         src_mask = inputs["src_mask"]
         src_pos = inputs["src_pos"]
@@ -710,10 +830,14 @@ class UnifiedTransformer(ModelBase):
         batch_size = src_token.shape[0]
         seq_len = src_token.shape[1]
 
-        src_embed = self.embedder(src_token, src_pos, src_type, src_turn)
-        src_embed = self.embed_layer_norm(src_embed)
+        tmp_src_embed = self.embedder(src_token, src_pos, src_type, src_turn)
+        
+        src_embed = fluid.dygraph.to_variable(tmp_src_embed.numpy())
 
-        mask = self._create_mask(src_mask, append_head=self.num_latent > 0)
+        src_embed = self.embed_layer_norm(src_embed)
+        
+        #创造mask矩阵
+        mask = self._create_mask(src_mask, append_head=self.num_latent > 0,auto_regressive=not self.bidirectional_context)
 
         if self.num_latent > 0:
             src_embed = F.unsqueeze(src_embed, [1]) #[batch_size,1,seq_len,hidden_size]
@@ -721,16 +845,37 @@ class UnifiedTransformer(ModelBase):
             src_embed = layers.reshape(src_embed, [-1, seq_len, self.hidden_dim])#[batch_size*num_latent,seq_len,hidden_size]
 
             latent_embed = self.latent_embeddings #[num_latent,hdd_size]
-            latent_embed = F.unsqueeze(latent_embed, [1])#[num_latent,1,hdd_size]
-            latent_embed = layers.expand(latent_embed, [batch_size, 1, 1]) #[batch_size*num_latent,seq_len,hidden_size]
+            latent_embed = F.unsqueeze(latent_embed, [1])#[num_latent,1,hidden_size]
+            latent_embed = layers.expand(latent_embed, [batch_size, 1, 1]) #[batch_size*num_latent,1,hidden_size]
             latent_embed = self.embed_layer_norm(latent_embed)
 
             enc_out = layers.concat([latent_embed, src_embed], axis=1)
 
             mask = F.unsqueeze(mask, [1]) # batch_size,1,seq_len,seq_len
-            mask = layers.expand(mask, [1, self.num_latent, 1, 1])
-            mask = layers.reshape(mask, [-1, seq_len + 1, seq_len + 1])
+            mask = layers.expand(mask, [1, self.num_latent, 1, 1]) # batch_size,num_latent,seq_len+1,seq_len+1
+            mask = layers.reshape(mask, [-1, seq_len + 1, seq_len + 1])# batch_size*num_latent,seq_len+1,seq_len+1
+            if self.use_pointer_network == 0:
+                # tmp_src_embed = F.unsqueeze(tmp_src_embed,[1])
+                # tmp_src_embed = layers.expand(tmp_src_embed,[1,self.num_latent,1,1])
+                # tmp_src_embed = layers.reshape(tmp_src_embed,[batch_size*self.num_latent,-1,self.hidden_dim])
+
+                # src_token_tmp = F.unsqueeze(src_token,[1])
+                # #print(src_token_tmp.shape)
+                # src_token_tmp = layers.expand(src_token_tmp,[1,self.num_latent,1,1])
+                # src_token_tmp  = layers.reshape(src_token_tmp ,[batch_size*self.num_latent,-1,1])
+
+                # src_type_tmp = F.unsqueeze(src_type,[1])
+                # src_type_tmp= layers.expand(src_type_tmp,[1,self.num_latent,1,1])
+                # src_type_tmp = layers.reshape(src_type_tmp,[batch_size*self.num_latent,-1,1])
+                 
+                state["src_embed"] = tmp_src_embed
+                state["src_token"] = src_token#_tmp
+                state["src_type"] = src_type#_tmp
         else:
+            if self.use_pointer_network == 0:
+                state["src_embed"] = tmp_src_embed
+                state["src_token"] = src_token
+                state["src_type"] = src_type
             enc_out = src_embed
 
         cache = {}
@@ -739,10 +884,10 @@ class UnifiedTransformer(ModelBase):
             enc_out = layer(enc_out, mask, cache[f"layer_{l}"])
 
         state["cache"] = cache
-        state["mask"] = mask[:, :1]
+        state["mask"] = mask[:, :1] # 选取了第一个latent位置的mask。batch_size*num_latent,1,seq_len+1
         if self.num_latent > 0:
             state["batch_size"] = batch_size * self.num_latent
-            shape = [batch_size * self.num_latent, 1, 1]
+            shape = [batch_size * self.num_latent, 1, 1] # shape有两个1维度为什么？
         else:
             state["batch_size"] = batch_size
             shape = [batch_size, 1, 1]
@@ -778,10 +923,16 @@ class UnifiedTransformer(ModelBase):
     def _decode(self, state):
         """ Decoding one time stamp. """
         # shape: [batch_size, 1, seq_len]
+        # if beamsearch [batch_size*beam_size,1,seq_len]
         mask = state["mask"]
-
+        # print("mask_shape",mask.shape[0])
+        # print("batch_size",state["batch_size"])
+        # print("num_latent",self.num_latent)
+        beam_size = mask.shape[0]//(state["batch_size"])
         # shape: [batch_size, 1]
+        #print("mask",mask.shape) #mask [100, 1, 147]
         pred_token = state["pred_token"]
+        #print("pred_token",pred_token.shape) #pred_token [100, 1, 1]
         pred_mask = state["pred_mask"]
         pred_pos = state["pred_pos"]
         pred_type = state["pred_type"]
@@ -812,8 +963,84 @@ class UnifiedTransformer(ModelBase):
             )
         else:
             pred_logits = self.predictor(pred_embed)
-        pred_logits = pred_logits[: , 0]
-        pred_probs = layers.softmax(pred_logits, axis=1)
+        
+
+
+        pred_probs = layers.softmax(pred_logits, axis=-1)
+
+        if self.use_pointer_network == 0:
+            import copy
+            context_embed = layers.assign(state["src_embed"])
+            context_token =layers.assign(state["src_token"])
+            typs_context = layers.assign(state["src_type"])
+            typs_context2 = layers.assign(state["src_type"])
+            if self.num_latent>0:
+                context_embed = F.unsqueeze(context_embed,[1])
+                print("1",context_embed.shape)
+                context_embed = layers.expand(context_embed,[1,self.num_latent,1,1])
+                print("2",context_embed.shape)
+                context_embed = layers.reshape(context_embed,[state["batch_size"]*beam_size,-1,self.hidden_dim])
+            
+                context_token = F.unsqueeze(context_token,[1])
+                #print(src_token_tmp.shape)
+                context_token = layers.expand(context_token,[1,self.num_latent,1,1])
+                context_token  = layers.reshape(context_token ,[state["batch_size"]*beam_size,-1,1])
+
+                typs_context = F.unsqueeze(typs_context,[1])
+                typs_context = layers.expand(typs_context,[1,self.num_latent,1,1])
+                typs_context = layers.reshape(typs_context,[state["batch_size"]*beam_size,-1,1]) 
+                
+                typs_context2 = F.unsqueeze(typs_context2,[1])
+                typs_context2 = layers.expand(typs_context2,[1,self.num_latent,1,1])
+                typs_context2 = layers.reshape(typs_context2,[state["batch_size"]*beam_size,-1,1])
+            #print(typs_context.shape)
+            #print(context_embed.shape)   
+            
+            context_token = context_token.numpy()
+            typs_context = typs_context.numpy().astype('float32')
+            typs_context2 = typs_context2.numpy().astype('float32')
+            typs_context[context_token==0] = 0 #batch_size,seq_len,1
+            typs_context[context_token!=0] = 1
+            typs_context2[context_token==0] = -1e10
+            typs_context2[context_token!=0] = 0
+            #print("fdfd",typs_context)
+            #print("fdsfsdf",typs_context2)
+
+            typs_context = fluid.dygraph.to_variable(typs_context)
+            typs_context2 = fluid.dygraph.to_variable(typs_context2)
+            typs_context = layers.squeeze(input=typs_context, axes=[2])
+            typs_context2 = layers.squeeze(input=typs_context2, axes=[2])
+            typs_context = F.unsqueeze(typs_context, [1])
+            #typs_context = layers.expand(typs_context, [1, dec_embed.shape[1], 1])
+            typs_context2 = F.unsqueeze(typs_context2, [1])
+            #typs_context2 = layers.expand(typs_context2, [1, dec_embed.shape[1], 1])
+            #typs_context.stop_gradient =True
+            #typs_context2.stop_gradient =True
+            #print("pred_embed",pred_embed.shape)
+            #print("context_embed",context_embed.shape)
+            pointer_logits = layers.matmul(
+                x = pred_embed,
+                y = context_embed,
+                transpose_y=True
+            )
+
+            pointer_logits = layers.elementwise_mul(pointer_logits, typs_context)#x = [100, 15, 230],y=[5,15,230]
+            pointer_logits = layers.elementwise_add(pointer_logits, typs_context2)
+            pointer_probs = layers.softmax(pointer_logits,axis=-1)
+            pointer_probs = layers.elementwise_mul(pointer_probs, typs_context)
+            context_token = fluid.dygraph.to_variable(context_token) 
+            know_onehot = layers.one_hot(context_token, self.num_token_embeddings)#batch_size,know_len,vocab_size
+            #know_onehot = layers.expand(know_onehot,[self.num_latent,1,1])
+            #know_onehot.stop_gradient =True
+            lada = fluid.layers.sigmoid(self.lada)
+            #print(lada) 
+            pointer_probs = layers.matmul(x=pointer_probs,y = know_onehot)
+
+            pred_probs = layers.elementwise_add(x=pred_probs*lada,y=pointer_probs*(1-lada)) 
+        
+        #pred_logits = pred_logits[: , 0]
+        pred_probs = pred_probs[:,0]
+        #print(pred_logits.shape)
         pred_logits = layers.log(pred_probs)
 
         state["mask"] = mask
@@ -859,7 +1086,7 @@ class UnifiedTransformer(ModelBase):
             mask_embed = self.embed_layer_norm(mask_embed)
 
             out = layers.concat([mask_embed, embed], axis=1)
-            mask = self._create_mask(input_mask, append_head=True)
+            mask = self._create_mask(input_mask, append_head=True,auto_regressive=not self.bidirectional_context)
 
             for layer in self.layers:
                 out = layer(out, mask, None)
