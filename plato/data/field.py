@@ -280,6 +280,49 @@ class BPETextField(object):
         print(f"Built {len(examples)} {data_type.upper()} examples ({ignored} filtered)")
         return examples
 
+    def build_examples_multi_turn_with_knowledgei_topic_turn(self, data_file, data_type="train"):
+        '''
+        在这里我们对原模型的数据输入进行修改，加入了判断是否需要进行topic转换的数据，分为正样本和负样本，
+        正样本代表需要进行话题切换的样本，这样的样本从其它的样本中获得。
+        而对于负样本，则需要用当前的数据进行构建。
+        
+        '''
+        print(f"Reading examples from '{data_file}' ...")
+        examples = []
+        ignored = 0
+
+        with open(data_file, "r", encoding="utf-8") as f:
+            for line in tqdm(f, total=None):
+                knowledge, src, tgt, negative, postive = line.strip("\n").split("\t")
+                tgt = self.tokenizer.tokenize(tgt)
+                postive = self.tokenizer.tokenize(postive)
+                negative = self.tokenizer.tokenize(negative)
+                knowledge = [self.tokenizer.tokenize(k) for k in knowledge.split(" __eou__ ")]
+                knowledge = [k[:self.max_knowledge_len]
+                             for k in knowledge[-self.max_knowledge_num:]]
+                
+                            
+                src = [self.tokenizer.tokenize(s) for s in src.split(" __eou__ ")]
+                if (self.utts_filter_pred(src) and all(map(self.utt_filter_pred, src)) 
+                        and self.utt_filter_pred(tgt)) or data_type == "test":
+                    src = [s[-self.max_utt_len:] for s in src[-self.max_ctx_turn:]]
+                    src = [self.numericalize(s) + [self.eos_id] for s in src]
+                    knowledge = [self.numericalize(k) + [self.eos_id] for k in knowledge]
+                    tgt = [self.bos_id] + self.numericalize(tgt) + [self.eos_id]
+                    negative = [self.bos_id] + self.numericalize(negative) + [self.eos_id] 
+                    postive = [self.bos_id] + self.numericalize(postive) + [self.eos_id]
+                    negative = negative[:self.max_utt_len+2]
+                    postive = negative[:self.max_utt_len+2]
+                    if data_type != "test":
+                        tgt = tgt[:self.max_utt_len + 2]
+
+                    ex = {"src": src, "knowledge": knowledge, "tgt": tgt,"postive":postive,"negative":negative}
+                    examples.append(ex)
+                else:
+                    ignored += 1
+        print(f"Built {len(examples)} {data_type.upper()} examples ({ignored} filtered)")
+        return examples
+    
     def collate_fn_multi_turn(self, samples):
         batch_size = len(samples)
 
@@ -338,7 +381,7 @@ class BPETextField(object):
             batch["tgt_pos"] = tgt_pos
             batch["tgt_type"] = tgt_role
             batch["tgt_turn"] = tgt_turn
-
+            batch["k_max_len"] = 0 #和有知识部分进行统一
         return batch, batch_size
 
     def collate_fn_multi_turn_with_knowledge(self, samples):
@@ -346,7 +389,8 @@ class BPETextField(object):
 
         src = [sp["src"] for sp in samples]
         knowledge = [sp["knowledge"] for sp in samples]
-
+        with_topic_transfer = False
+        if "postive" in samples[0]:with_topic_transfer =True
         src_token, src_pos, src_turn, src_role = [], [], [], []
         knowledge_token,knowledge_pos,knowledge_turn,knowledge_role = [],[],[],[] #新加knwoledge的部分
         for utts, ks in zip(src, knowledge):
@@ -407,5 +451,34 @@ class BPETextField(object):
             batch["tgt_pos"] = tgt_pos
             batch["tgt_type"] = tgt_role
             batch["tgt_turn"] = tgt_turn
+            if "postive" in samples[0]:
+                postive = [sp["postive"] for sp in samples]
+                postive_token = list2np(postive,padding = self.pad_id)
+                
+                postive_token_pos = np.zeros_like(postive_token)
+                postive_token_pos[:] = np.arange(postive_token_pos.shape[1],dtype = postive_token.dtype)
+                
+                postive_role = np.full_like(postive_token,self.user_id)
+                postive_turn = np.zeros_like(postive_token)
 
+                batch["postive_token"] = postive_token
+                batch["postive_token_pos"] = postive_token_pos
+                batch["postive_type"] = postive_role
+                batch["postive_turn"] = postive_turn
+                batch["postive_mask"] = (postive_token != self.pad_id).astype("int64")
+
+            if "negative" in samples[0]:
+                
+                negative = [sp["negative"] for sp in samples]
+                negative_token = list2np(negative,padding = self.pad_id)
+                
+                negative_token_pos = np.zeros_like(negative_token)
+                negative_token_pos[:] = np.arange(negative_token_pos.shape[1],dtype = negative_token.dtype)
+                negative_role = np.full_like(negative_token,self.user_id)
+                negative_turn = np.zeros_like(negative_token)
+                batch["negative_token"] = negative_token
+                batch["negative_token_pos"] = negative_token_pos
+                batch["negative_type"] = negative_role
+                batch["negative_turn"] = negative_turn
+                batch["negative_mask"] = (negative_token != self.pad_id).astype("int64")
         return batch, batch_size

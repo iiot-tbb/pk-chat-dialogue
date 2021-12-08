@@ -27,7 +27,7 @@ class Dataset(object):
         group.add_argument("--data_dir", type=str, required=True,
                            help="The dataset dir.")
         group.add_argument("--data_type", type=str, required=True,
-                           choices=["multi", "multi_knowledge"],
+                           choices=["multi", "multi_knowledge","multi_knowledge_topic_transfer"],
                            help="The type of dataset.")
         return group
 

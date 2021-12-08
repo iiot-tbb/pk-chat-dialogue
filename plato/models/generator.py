@@ -155,7 +155,7 @@ class Sampling(Generator):
         pos_index = layers.range(0, batch_size, 1, dtype="int64") #返回1-d tensor rangne(,,,)
         pos_index = layers.scale(pos_index, vocab_size) #缩放 vocab_size*pos_index[0,1*vo_size,,,(batch_size-1)*vocab_size]
 
-        # shape: [batch_size, beam_size, 1]
+        # shape: [batch_size,1]
         predictions = layers.fill_constant(shape=[batch_size, 1],#在这里如何体现了beam——size的值呢？
                                            dtype="int64",
                                            value=self.bos_id)
@@ -296,7 +296,7 @@ class BeamSearch(Generator):
 
     @classmethod
     def add_cmdline_argument(cls, group):
-        group.add_argument("--beam_size", type=int, default=5,
+        group.add_argument("--beam_size", type=int, default=2,
                            help="The beam size in beam search.")
         group.add_argument("--length_average", type=str2bool, default=False,
                            help="Whether to use length average.")
@@ -362,8 +362,11 @@ class BeamSearch(Generator):
         sequence_scores, preds = layers.topk(scores, self.beam_size)
 
         predictions = layers.concat([predictions, F.unsqueeze(preds, [2])], axis=2)
+        #print("pred:",state["pred_token"].shape)
+        #print("365",state["src_token"].shape)
         state = repeat(state, beam_size)
-
+        #print("367",state["src_token"].shape)
+        #print("pred",state["pred_token"].shape)
         parent_idx_list = []
         pred_list = []
 
@@ -372,7 +375,9 @@ class BeamSearch(Generator):
             state["pred_token"] = layers.reshape(pre_ids, shape=[batch_size * beam_size, 1, 1])
             state["pred_mask"] = 1 - F.equal(state["pred_token"], self.pad_id)
             state["pred_pos"] = state["pred_pos"] + 1
+            #print("378",state["src_token"].shape) 
             scores, state = step_fn(state)
+            #print("380",state["src_token"].shape) 
 
             # Generate next
             # scores shape: [batch_size, beam_size, vocab_size]

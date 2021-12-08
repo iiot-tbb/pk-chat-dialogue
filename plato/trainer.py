@@ -117,6 +117,8 @@ class Trainer(object):
                            help="Whether to save one checkpoints for each training epoch.")
         group.add_argument("--save_summary", type=str2bool, default=False,
                            help="Whether to save metrics summary for visualDL module.")
+        group.add_argument("--use_topic_evaluate",type = str2bool,default = False,
+                            help = "use_topic_evaluate") #新加入判别部分判断是否需要转换主题。
         DataLoader.add_cmdline_argument(group)
         return group
 
@@ -141,6 +143,8 @@ class Trainer(object):
         self.valid_steps = hparams.valid_steps
         self.save_checkpoint = hparams.save_checkpoint
         self.save_summary = hparams.save_summary
+
+        self.topic_evaluate = hparams.use_topic_evaluate
 
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
@@ -307,7 +311,10 @@ class Trainer(object):
         """
         self.logger.info("Generation starts ...")
         infer_save_file = os.path.join(self.save_dir, f"infer_{self.epoch}.result.json")
-
+        
+        #Judge_topic
+        if self.topic_evaluate:
+            tp_all,tn_all,fp_all,fn_all = 0,0,0,0
         # Inference
         infer_results = []
         batch_cnt = 0
@@ -316,6 +323,12 @@ class Trainer(object):
             batch = type(batch)(map(lambda kv: (kv[0], self.to_tensor(kv[1])), batch.items()))
 
             result = self.model.infer(inputs=batch)
+            if self.topic_evaluate:
+                tp_tmp,tn_tmp,fp_tmp,fn_tmp = self.model.judge_topic_infer(inputs=batch)
+                tp_all+=tp_tmp
+                tn_all+=tn_tmp
+                fp_all+=fp_tmp
+                fn_all+=fn_tmp
             batch_result = {}
 
             def to_list(batch):
@@ -340,7 +353,11 @@ class Trainer(object):
             batch_cnt += 1
             if batch_cnt == num_batches:
                 break
-
+        if self.topic_evaluate:
+            precision_all = tp_all/(tp_all+fp_all)
+            recall_all = tp_all/(tp_all+fn_all)
+            f1 = (2*precision_all*recall_all)/(precision_all+recall_all)
+            trans_score = "trans_tpoic--f1/precision/recall: "+str(f1)+" "+str(precision_all)+" "+str(recall_all)
         self.logger.info(f"Saved inference results to {infer_save_file}")
         with open(infer_save_file, "w") as fp:
             json.dump(infer_results, fp, indent=2)
@@ -348,7 +365,10 @@ class Trainer(object):
         metrics_message = infer_metrics_tracker.summary()
         message_prefix = f"[Infer][{self.epoch}]"
         time_cost = f"TIME-{time.time() - begin_time:.3f}"
-        message = "   ".join([message_prefix, metrics_message, time_cost])
+        if self.topic_evaluate:
+            message = "   ".join([message_prefix, metrics_message,trans_score, time_cost])
+        else:
+            message = "   ".join([message_prefix, metrics_message,time_cost])
         self.logger.info(message)
         return
 
