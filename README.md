@@ -81,12 +81,16 @@
     Precison:0.23521822898554215
     F1:0.11312418492557835
     Recall/Precision/F1:0.0829/0.2352/0.1131
+    3beam BLEU_1-0.424   BLEU_2-0.361   INTRA_DIST_1-0.964   INTRA_DIST_2-0.968   INTER_DIST_1-0.165   INTER_DIST_2-0.366   LEN-7.543   TIME-1362.190
 
 - 47 epoch and plato and AceDialog   BLEU_1-0.960   BLEU_2-0.863   INTRA_DIST_1-0.932   INTRA_DIST_2-0.981   INTER_DIST_1-0.168   INTER_DIST_2-0.457   LEN-11.346   TIME-1595.76
     Recall:0.09926801010102905
     Precison:0.2176272480981623
     F1:0.1247091653397901
     Recall/Precision/F1:0.0993/0.2176/0.1247
+
+    
+
 - 20 epoch and pointer_network 37配比 BLEU_1-0.100   BLEU_2-0.076   INTRA_DIST_1-0.991   INTRA_DIST_2-0.975   INTER_DIST_1-0.055   INTER_DIST_2-0.127   LEN-4.427   TIME-1723.121
 - 13 epoch context_pointer  BLEU_1-0.269   BLEU_2-0.227   INTRA_DIST_1-0.978   INTRA_DIST_2-0.967   INTER_DIST_1-0.173   INTER_DIST_2-0.367   LEN-5.684   TIME-1616.154
 - 17 epoch context_pointer BLEU_1-0.346   BLEU_2-0.289   INTRA_DIST_1-0.966   INTRA_DIST_2-0.980   INTER_DIST_1-0.156   INTER_DIST_2-0.341   LEN-7.252   TIME-1465.656
@@ -96,6 +100,34 @@
     F1:0.10930082172545103
     Recall/Precision/F1:0.0784/0.2319/0.1093
 
+- 20 eopoch context_pointer2 beam_size 3 BLEU_1-0.379   BLEU_2-0.317   INTRA_DIST_1-0.959   INTRA_DIST_2-0.972   INTER_DIST_1-0.159   INTER_DIST_2-0.364   LEN-7.443   TIME-1325.052
+
+- 25 epoche context_pointer2 beam_size 3
+BLEU_1-0.484   BLEU_2-0.411   INTRA_DIST_1-0.955   INTRA_DIST_2-0.974   INTER_DIST_1-0.164   INTER_DIST_2-0.383   LEN-8.058   TIME-1407.879
+Recall/Precision/F1:0.0772/0.2225/0.1065
+
+- 20 epoch and context_pointer DSTC 
+ BLEU_1-0.001   BLEU_2-0.001   INTRA_DIST_1-0.980   INTRA_DIST_2-1.000   INTER_DIST_1-0.054   INTER_DIST_2-0.199   LEN-7.222   TIME-7124.544
+
+Bleu_1: 0.7321
+Bleu_2: 0.5954
+Bleu_3: 0.4927
+Bleu_4: 0.4087
+METEOR: 0.2513
+ROUGE_L: 0.5500
+CIDEr: 1.0035
+- 20 epoch and gpt DSTC
+BLEU_1-0.002   BLEU_2-0.001   INTRA_DIST_1-0.960   INTRA_DIST_2-0.930   INTER_DIST_1-0.027   INTER_DIST_2-0.060   LEN-5.451   TIME-6851.663
+Bleu_1: 0.3338
+Bleu_2: 0.1891
+Bleu_3: 0.0939
+Bleu_4: 0.0459
+METEOR: 0.0894
+ROUGE_L: 0.2458
+CIDEr: 0.0893
+
+- 20 poech and pointer1 ACE
+[Infer][0]   BLEU_1-0.202   BLEU_2-0.173   INTRA_DIST_1-0.958   INTRA_DIST_2-0.856   INTER_DIST_1-0.258   INTER_DIST_2-0.514   LEN-4.748   TIME-1268.691
 ## 20211107
 - 记录到一个bug,创建的变量参数必须在forward里面用到，否则就会出现未分配内存的情况。
 
@@ -108,7 +140,11 @@
     - 还未考虑最后一层隐状态embedding的输出
 - 如果上面效果很差，可以将知识外部化考虑
 
+## 20211128
+- 改变了lambda的计算方式，用tgt pooling和context pooling做点乘后算atention来计算pointer network的比例。(先看看效果。)
 
+## 20211130
+- bug,没有assgin会共享内存,不用字典竟然没事
 # 文件说明
 
 #### `chat.py`:对话文件，生成的对话聊天
@@ -132,6 +168,13 @@
 - 加入 pointer network
 - 直接用 pointer network 指向送入网络的知识不太好实现，可以把知识外部化。再思考一下两个方案的可行性。
 - 引入闲聊的方式的一个目的是，如果知识引用错误，也不会生成不合理的句子，另一方面，如果用户真实情况下并未说出带有知识的问题，也可以给出流畅的回复，而不是错误的应用网络可能记忆到的知识，因此在训练闲聊任务时，一方面，加入错误的外部知识，另一方面，加入特殊的标记字段来表示知识无引用。
+
+
+# 关于判断topic transfer 的工作
+
+- 首先，在模型里加入这一部分
+- 第二，在数据中进行修改，(直觉上对数据集的修改比较麻烦，先做第一步比较好)
+
 
 # 论文问题：
 
