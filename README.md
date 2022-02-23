@@ -18,6 +18,7 @@
 - plato
 - plato_ceshi 可以跑mutil_gpu
 - palto_abs 增加了summarize的模块，看是否影响到了plato环境
+- plato_visual 现在用的环境。
 
 
 ## 20211002
@@ -104,8 +105,12 @@
 
 - 25 epoche context_pointer2 beam_size 3
 BLEU_1-0.484   BLEU_2-0.411   INTRA_DIST_1-0.955   INTRA_DIST_2-0.974   INTER_DIST_1-0.164   INTER_DIST_2-0.383   LEN-8.058   TIME-1407.879
-Recall/Precision/F1:0.0772/0.2225/0.1065
+BLEU_1-0.541   BLEU_2-0.466   INTRA_DIST_1-0.957   INTRA_DIST_2-0.970   INTER_DIST_1-0.163   INTER_DIST_2-0.398   LEN-8.194   TIME-1364.405
+Recall/Precision/F1:0.0799/0.2229/0.1094
 
+Recall/Precision/F1:0.0825/0.2162/0.1101
+BLEU_1-0.630   BLEU_2-0.549   INTRA_DIST_1-0.949   INTRA_DIST_2-0.983   INTER_DIST_1-0.162   INTER_DIST_2-0.401   LEN-9.233   TIME-1175.168
+Recall/Precision/F1:0.0825/0.2229/0.1204
 - 20 epoch and context_pointer DSTC 
  BLEU_1-0.001   BLEU_2-0.001   INTRA_DIST_1-0.980   INTRA_DIST_2-1.000   INTER_DIST_1-0.054   INTER_DIST_2-0.199   LEN-7.222   TIME-7124.544
 
@@ -126,8 +131,23 @@ METEOR: 0.0894
 ROUGE_L: 0.2458
 CIDEr: 0.0893
 
+DSTC_pointer2_network
+Bleu_1: 0.7004
+Bleu_2: 0.5640
+Bleu_3: 0.4634
+Bleu_4: 0.3822
+METEOR: 0.2412
+ROUGE_L: 0.5351
+CIDEr: 0.9234
+
 - 20 poech and pointer1 ACE
 [Infer][0]   BLEU_1-0.202   BLEU_2-0.173   INTRA_DIST_1-0.958   INTRA_DIST_2-0.856   INTER_DIST_1-0.258   INTER_DIST_2-0.514   LEN-4.748   TIME-1268.691
+
+
+lstrmcrf:precision: 0.549 recall: 0.630 f1: 0.587
+f1/precison/recall:0.4657534246575343 0.38636363636363635 0.5862068965517241
+mohu:f1/precision/recall:0.6027397260273972 0.5 0.7586206896551724
+
 ## 20211107
 - 记录到一个bug,创建的变量参数必须在forward里面用到，否则就会出现未分配内存的情况。
 
@@ -183,5 +203,6 @@ make all                      # 编译生成 main.pdf
 make clean                    # 删除编译所产生的中间文件
 make cleanall                 # 删除 main.pdf 和所有中间文件
 make wordcount                # 论文字数统计 
+rm -Rf "$(biber --cache)"清理缓存。
 ```
 
