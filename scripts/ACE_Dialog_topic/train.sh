@@ -10,7 +10,7 @@ DATA_TYPE=multi_knowledge
 USE_VISUALDL=true
 
 # CUDA environment settings.
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=2,3
 
 # Paddle environment settings.
 export FLAGS_fraction_of_gpu_memory_to_use=0.7
