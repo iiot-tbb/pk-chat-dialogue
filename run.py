@@ -74,7 +74,8 @@ def main():
 
     COLLATE_FN = {
         "multi": bpe.collate_fn_multi_turn,
-        "multi_knowledge": bpe.collate_fn_multi_turn_with_knowledge
+        "multi_knowledge": bpe.collate_fn_multi_turn_with_knowledge,
+        "multi_knowledge_topic_transfer":bpe.collate_fn_multi_turn_with_knowledge
     }
     collate_fn = COLLATE_FN[hparams.data_type] #padding 
 
@@ -154,7 +155,9 @@ def main():
             infer_parse_dict = {
                 "src": parse_context,
                 "tgt": parse_text,
-                "preds": parse_text
+                "preds": parse_text,
+                "postive":parse_text,
+                "negative":parse_text
             }
             trainer.infer(test_loader, infer_parse_dict, num_batches=hparams.num_infer_batches)
 

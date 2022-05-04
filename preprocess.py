@@ -43,7 +43,8 @@ def main():
     
     BUILD_EXAMPLES_FN = {
         "multi": bpe.build_examples_multi_turn,
-        "multi_knowledge": bpe.build_examples_multi_turn_with_knowledge
+        "multi_knowledge": bpe.build_examples_multi_turn_with_knowledge,
+        "multi_knowledge_topic_transfer":bpe.build_examples_multi_turn_with_knowledge_topic_turn
     }
     build_examples_fn = BUILD_EXAMPLES_FN[args.data_type]
     
