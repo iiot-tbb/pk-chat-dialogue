@@ -15,7 +15,6 @@
 UnifiedTransformer
 """
 
-import random
 import numpy as np
 import paddle
 import paddle.fluid as fluid
@@ -44,7 +43,7 @@ class UnifiedTransformer(ModelBase):
                            "It will be automatically calculated after loading vocabulary.")
         group.add_argument("--num_pos_embeddings", type=int, default=512,
                            help="The maximum number of position.")
-        group.add_argument("--num_type_embeddings", type=int, default=3,
+        group.add_argument("--num_type_embeddings", type=int, default=2,
                            help="The number of different type of tokens.")
         group.add_argument("--num_turn_embeddings", type=int, default=16,
                            help="The maximum number of turn.")
@@ -95,13 +94,10 @@ class UnifiedTransformer(ModelBase):
                            help="The weight decay for Adam.")
         group.add_argument("--max_grad_norm", type=float, default=5.0,
                            help="The maximum norm of gradient.")
-        group.add_argument("--use_pointer_network",type =int,default = 2,
+        group.add_argument("--use_pointer_network",type =int,default = -1,
                            help = "use pointer network to process knowledge") #新加入判断是否采用指针网络
-        group.add_argument("--use_topic_trans_judge",type = str2bool,default = True,
+        group.add_argument("--use_topic_trans_judge",type = str2bool,default = False,
                             help = "use topic transfer to judge whether to get the new knowledge") #新加入判别部分判断是否需要转换主题。
-        group.add_argument("--do_chat",type = str2bool,default = True,
-                            help = "use topic transfer to judge whether to get the new knowledge") 
-        
         return group
 
     def __init__(self, name_scope, hparams, generator, dtype="float32"):
@@ -131,7 +127,7 @@ class UnifiedTransformer(ModelBase):
         self.initializer_range = hparams.initializer_range
         self.use_pointer_network = hparams.use_pointer_network
         self.use_topic_trans = hparams.use_topic_trans_judge
-        self.do_chat = hparams.do_chat # 为了增快在推理使用中的速度,随机sample latent，而不是用全部的。
+
         self.embedder = Embedder(self.full_name(),
                                  self.hidden_dim,
                                  self.num_token_embeddings,
@@ -444,45 +440,26 @@ class UnifiedTransformer(ModelBase):
                                  append_head=True)
         #print("size-----------",mask_postive.shape,post_embed.shape)
         #print("size-----------",mask_negative.shape,negative_embed.shape)
-        #print(post_embed.numpy()==negative_embed.numpy())
+
         for layer in self.layers:
-            post_embed = layer(post_embed,mask_postive,None)
-            negative_embed = layer(negative_embed, mask_negative, None) 
+            pos_embed = layer(post_embed,mask_postive,None)
         
-        pos_embed = post_embed[:,0]
+        pos_embed = pos_embed[:,0]
         pos_probs = self.transtor(pos_embed)
-       
-            
-        neg_embed = negative_embed[:,0]     
+        for layer in self.layers: 
+            neg_embed = layer(negative_embed, mask_negative, None) 
+        
+        neg_embed = neg_embed[:,0]
+
+        
         neg_probs = self.transtor(neg_embed) 
-
-        #print("pos_prob:",pos_probs.numpy(),"nega:",neg_probs.numpy())
+        #print("pos_prob:",pos_probs,"nega:",neg_probs)
         return pos_probs,neg_probs
-
-    def _transfer_network_chat(self,postive_mask,postive_embed,batch_size):
-        """ Basic transfer network implement. """
-        mask_embed = self.mask_embed
-        mask_embed = layers.expand(mask_embed, [batch_size, 1, 1])
-        mask_embed = self.embed_layer_norm(mask_embed)
-        post_embed = layers.concat([mask_embed, postive_embed], axis=1)
-
-        mask_postive = self._create_mask(postive_mask, auto_regressive=False,
-                                 append_head=True) 
-       
-        for layer in self.layers:
-            post_embed = layer(post_embed,mask_postive,None)
-        
-        pos_embed = post_embed[:,0]
-        pos_probs = self.transtor(pos_embed)
-        #print("pos_prob:",pos_probs.numpy(),"nega:",neg_probs.numpy())
-        return pos_probs
-
-
     def _generation_network(self, input_mask, embed, batch_size, src_len, tgt_len, latent_embed,knw_len,src_type,src_token,tgt_token):
         """ Basic generation network implement. """
         #print(embed.shape)
         #print(knw_len)
-        knw_len = knw_len.numpy()[0]
+        #knw_len = knw_len.numpy()[0]
         if self.num_latent > 0:
             latent_embed = F.unsqueeze(latent_embed, [1])#btach_size,1,hidenn_embedding
             latent_embed = self.embed_layer_norm(latent_embed)
@@ -883,29 +860,30 @@ class UnifiedTransformer(ModelBase):
 
         return latent_embed, dec_probs
 
-    def _forward(self, inputs, is_training):
+    def _forward(self, src_token,src_mask,src_pos,src_type,src_turn,k_max_len,postive_token=None,
+        postive_token_pos=None, postive_type=None,postive_turn=None,postive_mask=None,negative_token=None,negative_token_pos=None,
+        negative_type=None,negative_turn=None,negative_mask=None,tgt_token=None,tgt_mask=None,tgt_pos=None,tgt_type=None,tgt_turn=None,is_training=False):
         """ Real forward process of model in different mode(train/test). """
         outputs = {}
-        if "k_max_len" in inputs:
-            knw_max_len = inputs["k_max_len"][0]
-        else:
-            knw_max_len = 0
+        #if k_max_len !=None:
+        knw_max_len = k_max_len
+        #else:
+        #    knw_max_len = 0
         
 
-        src_token = inputs["src_token"]
-        src_mask = inputs["src_mask"]
-        src_pos = inputs["src_pos"]
-        src_type = inputs["src_type"]
-        src_turn = inputs["src_turn"]
+        # src_token = inputs["src_token"]
+        # src_mask = inputs["src_mask"]
+        # src_pos = inputs["src_pos"]
+        # src_type = inputs["src_type"]
+        # src_turn = inputs["src_turn"]
         #print("src_typppppp",src_type.shape)
         #print(src_type.numpy())
-        tgt_token = inputs["tgt_token"][:, :-1]
-        tgt_mask = inputs["tgt_mask"][:, :-1]
-        tgt_pos = inputs["tgt_pos"][:, :-1]
-        tgt_type = inputs["tgt_type"][:, :-1]
-        tgt_turn = inputs["tgt_turn"][:, :-1]
+        tgt_token =tgt_token[:, :-1]
+        tgt_mask = tgt_mask[:, :-1]
+        tgt_pos =  tgt_pos[:, :-1]
+        tgt_type = tgt_type[:, :-1]
+        tgt_turn = tgt_turn[:, :-1]
 
-    
 
         #print("src_mask_transformer:",src_mask.shape)
 
@@ -916,18 +894,18 @@ class UnifiedTransformer(ModelBase):
         embed = layers.concat([src_embed, tgt_embed], axis=1)
         embed = self.embed_layer_norm(embed)
 
-        if self.use_topic_trans and "postive_token" in inputs:
-            postive_token = inputs["postive_token"]
-            postive_pos = inputs["postive_token_pos"]
-            postive_type = inputs["postive_type"]
-            postive_turn = inputs["postive_turn"]
-            postive_mask = inputs["postive_mask"]
+        if self.use_topic_trans :
+            postive_token = postive_token
+            postive_pos = postive_token_pos
+            postive_type = postive_type
+            postive_turn = postive_turn
+            postive_mask = postive_mask
 
-            negative_token = inputs["negative_token"]
-            negative_pos = inputs["negative_token_pos"]
-            negative_type = inputs["negative_type"]
-            negative_turn = inputs["negative_turn"]
-            negative_mask = inputs["negative_mask"]
+            negative_token =negative_token
+            negative_pos = negative_token_pos
+            negative_type = negative_type
+            negative_turn = negative_turn
+            negative_mask = negative_mask
 
             postive_embed = self.embedder(postive_token,postive_pos,postive_type,postive_turn)
             negative_embed = self.embedder(negative_token,negative_pos,negative_type,negative_turn)
@@ -947,7 +925,7 @@ class UnifiedTransformer(ModelBase):
         src_len = src_token.shape[1]
         tgt_len = tgt_token.shape[1]
         
-        if self.use_topic_trans and "postive_token" in inputs:
+        if self.use_topic_trans:
             tran_positive_probs,trans_negative_probs = self._transfer_network(
                 postive_input_mask,negative_input_mask,postive_embed,negative_embed,batch_size
             )
@@ -970,9 +948,9 @@ class UnifiedTransformer(ModelBase):
             if is_training:
                 z = F.gumbel_softmax(post_logits, self.tau) #gumbel_softmax的作用
             else:
-                indices = layers.argmax(post_logits, axis=1)#batch_size,num_latent
+                indices = layers.argmax(post_logits, axis=1)
                 z = layers.one_hot(F.unsqueeze(indices, [1]), self.num_latent)
-            latent_embeddings = self.latent_embeddings #[latent_num,hidden_size]
+            latent_embeddings = self.latent_embeddings #[latend_num,hidden_size]
             latent_embed = layers.matmul(z, latent_embeddings) #[batch_size,hidden_size]
             outputs["latent_embed"] = latent_embed
         else:
@@ -1090,56 +1068,36 @@ class UnifiedTransformer(ModelBase):
         mask2 = self._create_mask(src_mask, append_head=self.num_latent > 0,auto_regressive=False)
 
         if self.num_latent > 0:
-            if self.do_chat==False:
-                src_embed = F.unsqueeze(src_embed, [1]) #[batch_size,1,seq_len,hidden_size]
-                src_embed = layers.expand(src_embed, [1, self.num_latent, 1, 1])
-                src_embed = layers.reshape(src_embed, [-1, seq_len, self.hidden_dim])#[batch_size*num_latent,seq_len,hidden_size]
+            src_embed = F.unsqueeze(src_embed, [1]) #[batch_size,1,seq_len,hidden_size]
+            src_embed = layers.expand(src_embed, [1, self.num_latent, 1, 1])
+            src_embed = layers.reshape(src_embed, [-1, seq_len, self.hidden_dim])#[batch_size*num_latent,seq_len,hidden_size]
 
-                latent_embed = self.latent_embeddings #[num_latent,hdd_size]
-                latent_embed = F.unsqueeze(latent_embed, [1])#[num_latent,1,hidden_size]
-                latent_embed = layers.expand(latent_embed, [batch_size, 1, 1]) #[batch_size*num_latent,1,hidden_size]
-                latent_embed = self.embed_layer_norm(latent_embed)
+            latent_embed = self.latent_embeddings #[num_latent,hdd_size]
+            latent_embed = F.unsqueeze(latent_embed, [1])#[num_latent,1,hidden_size]
+            latent_embed = layers.expand(latent_embed, [batch_size, 1, 1]) #[batch_size*num_latent,1,hidden_size]
+            latent_embed = self.embed_layer_norm(latent_embed)
 
-            
-            else:
-                src_embed #不变
-                randz =  random.randint(0,self.num_latent-1)
-                latent_embed = self.latent_embeddings 
-                latent_embed = latent_embed[randz:randz+1]
-                latent_embed = F.unsqueeze(latent_embed, [1])
-                latent_embed = layers.expand(latent_embed, [batch_size, 1, 1]) #[batch_size,1,hidden_size]
-                latent_embed = self.embed_layer_norm(latent_embed)
-
-
-            # 在这里把所有的latent——embed都考虑进去了，因此，如果需要提升速度，这里应该random_select
             enc_out = layers.concat([latent_embed, src_embed], axis=1)
 
-            if self.do_chat==False: #主要用于在chat时加速推理
-                mask = F.unsqueeze(mask, [1]) # batch_size,1,seq_len,seq_len
-                mask = layers.expand(mask, [1, self.num_latent, 1, 1]) # batch_size,num_latent,seq_len+1,seq_len+1
-                mask = layers.reshape(mask, [-1, seq_len + 1, seq_len + 1])# batch_size*num_latent,seq_len+1,seq_len+1
-                mask2 = F.unsqueeze(mask2, [1]) # batch_size,1,seq_len,seq_len
-                mask2 = layers.expand(mask2, [1, self.num_latent, 1, 1]) # batch_size,num_latent,seq_len+1,seq_len+1
-                mask2 = layers.reshape(mask2, [-1, seq_len + 1, seq_len + 1])# batch_size*num_latent,seq_len+1,seq_len+1
-            
-
+            mask = F.unsqueeze(mask, [1]) # batch_size,1,seq_len,seq_len
+            mask = layers.expand(mask, [1, self.num_latent, 1, 1]) # batch_size,num_latent,seq_len+1,seq_len+1
+            mask = layers.reshape(mask, [-1, seq_len + 1, seq_len + 1])# batch_size*num_latent,seq_len+1,seq_len+1
+            mask2 = F.unsqueeze(mask2, [1]) # batch_size,1,seq_len,seq_len
+            mask2 = layers.expand(mask2, [1, self.num_latent, 1, 1]) # batch_size,num_latent,seq_len+1,seq_len+1
+            mask2 = layers.reshape(mask2, [-1, seq_len + 1, seq_len + 1])# batch_size*num_latent,seq_len+1,seq_len+1
             if self.use_pointer_network >= 0:
-                if self.do_chat==False:
-                    tmp_src_embed = F.unsqueeze(tmp_src_embed,[1])
-                    tmp_src_embed = layers.expand(tmp_src_embed,[1,self.num_latent,1,1])
-                    tmp_src_embed = layers.reshape(tmp_src_embed,[batch_size*self.num_latent,-1,self.hidden_dim])
+                tmp_src_embed = F.unsqueeze(tmp_src_embed,[1])
+                tmp_src_embed = layers.expand(tmp_src_embed,[1,self.num_latent,1,1])
+                tmp_src_embed = layers.reshape(tmp_src_embed,[batch_size*self.num_latent,-1,self.hidden_dim])
 
-                    src_token_tmp = F.unsqueeze(src_token,[1])
-                    #print(src_token_tmp.shape)
-                    src_token_tmp = layers.expand(src_token_tmp,[1,self.num_latent,1,1])
-                    src_token_tmp  = layers.reshape(src_token_tmp ,[batch_size*self.num_latent,-1,1])
+                src_token_tmp = F.unsqueeze(src_token,[1])
+                #print(src_token_tmp.shape)
+                src_token_tmp = layers.expand(src_token_tmp,[1,self.num_latent,1,1])
+                src_token_tmp  = layers.reshape(src_token_tmp ,[batch_size*self.num_latent,-1,1])
 
-                    src_type_tmp = F.unsqueeze(src_type,[1])
-                    src_type_tmp= layers.expand(src_type_tmp,[1,self.num_latent,1,1])
-                    src_type_tmp = layers.reshape(src_type_tmp,[batch_size*self.num_latent,-1,1])
-                else:
-                    src_token_tmp = src_token
-                    src_type_tmp = src_type
+                src_type_tmp = F.unsqueeze(src_type,[1])
+                src_type_tmp= layers.expand(src_type_tmp,[1,self.num_latent,1,1])
+                src_type_tmp = layers.reshape(src_type_tmp,[batch_size*self.num_latent,-1,1])
 
                 state["src_embed"] = tmp_src_embed
                 state["src_token"] = src_token_tmp
@@ -1164,7 +1122,7 @@ class UnifiedTransformer(ModelBase):
         state["context_att_emd"] = enc_out[:,1:]
         state["cache"] = cache
         state["mask"] = mask2[:, :1] # 选取了第一个latent位置的mask。batch_size*num_latent,1,seq_len+1
-        if self.num_latent > 0 and self.do_chat==False:
+        if self.num_latent > 0:
             state["batch_size"] = batch_size * self.num_latent
             shape = [batch_size * self.num_latent, 1, 1] # shape有两个1维度为什么？
         else:
@@ -1463,13 +1421,16 @@ class UnifiedTransformer(ModelBase):
         state["mask"] = mask
         return pred_logits, state
 
-    def _ranking(self, inputs, predictions):
+    def _ranking(self, 
+                    src_token,
+                    src_mask ,
+                    src_pos ,
+                    src_type ,
+                    src_turn ,
+                    src_embed,
+                    predictions):
         """ Reranking generated responses. """
-        src_token = inputs["src_token"]
-        src_mask = inputs["src_mask"]
-        src_pos = inputs["src_pos"]
-        src_type = inputs["src_type"]
-        src_turn = inputs["src_turn"]
+        
         src_embed = self.embedder(src_token, src_pos, src_type, src_turn)
 
         batch_size, num_latent, tgt_seq_len = predictions.shape
@@ -1514,24 +1475,27 @@ class UnifiedTransformer(ModelBase):
         scores = layers.stack(scores, axis=1)
         return scores
 
-    def judge_topic_infer(self,inputs):
-        src_token = inputs["src_token"]
-        src_mask = inputs["src_mask"]
-        src_pos = inputs["src_pos"]
-        src_type = inputs["src_type"]
-        src_turn = inputs["src_turn"]
+    def judge_topic_infer(self,src_token,src_mask,src_pos,src_type,src_turn,postive_token,
+        postive_token_pos, postive_type,postive_turn,postive_mask,negative_token,negative_token_pos,
+        negative_type,negative_turn
+    ):
+        src_token = src_token
+        src_mask = src_mask
+        src_pos = src_pos
+        src_type = src_type
+        src_turn = src_turn
 
-        postive_token = inputs["postive_token"]
-        postive_pos = inputs["postive_token_pos"]
-        postive_type = inputs["postive_type"]
-        postive_turn = inputs["postive_turn"]
-        postive_mask = inputs["postive_mask"]
+        postive_token = postive_token
+        postive_pos = postive_token_pos
+        postive_type = postive_type
+        postive_turn = postive_turn
+        postive_mask = postive_mask
 
-        negative_token = inputs["negative_token"]
-        negative_pos = inputs["negative_token_pos"]
-        negative_type = inputs["negative_type"]
-        negative_turn = inputs["negative_turn"]
-        negative_mask = inputs["negative_mask"]
+        negative_token = negative_token
+        negative_pos = negative_token_pos
+        negative_type = negative_type
+        negative_turn = negative_turn
+        negative_mask = negative_mask
 
         
         src_embed = self.embedder(src_token, src_pos, src_type, src_turn)
@@ -1553,12 +1517,9 @@ class UnifiedTransformer(ModelBase):
                 postive_input_mask,negative_input_mask,postive_embed,negative_embed,batch_size
             )
         #batch_size,1
-        #postive_,negative_ = tran_positive_probs,trans_negative_probs
-        temp1 = tran_positive_probs.numpy()
-        temp2 = trans_negative_probs.numpy()
         trans_negative_probs = trans_negative_probs.numpy()
         tran_positive_probs = tran_positive_probs.numpy()
-        
+
         #print(tran_positive_probs)
         #print("nexxt")
         #print(trans_negative_probs)
@@ -1576,53 +1537,9 @@ class UnifiedTransformer(ModelBase):
         fp = batch_size-tn
         #print(fp)
         #print(fn)
-        return tp,tn,fp,fn,temp1,temp2
-
-    def judge_topic_chat(self,inputs):
-            src_token = inputs["src_token"]
-            src_mask = inputs["src_mask"]
-            src_pos = inputs["src_pos"]
-            src_type = inputs["src_type"]
-            src_turn = inputs["src_turn"]
-            print(inputs.keys())
-            judge_token = inputs["judge_token"]
-            judge_pos = inputs["judge_token_pos"]
-            judge_type = inputs["judge_type"]
-            judge_turn = inputs["judge_turn"]
-            judge_mask = inputs["judge_mask"]
+        return tp,tn,fp,fn
 
 
-            
-            src_embed = self.embedder(src_token, src_pos, src_type, src_turn)
-            judge_embed = self.embedder(judge_token,judge_pos,judge_type,judge_turn)
-            
-
-            judge_input_mask = layers.concat([src_mask,judge_mask],axis=1)
-           
-            judge_embed = layers.concat([src_embed, judge_embed], axis=1)
-            judge_embed = self.embed_layer_norm(judge_embed)
-            
-            batch_size = src_token.shape[0]
-
-            # negative是本文中的带知识文本
-            # postive是上一轮中的带知识文本
-            judge_probs= self._transfer_network_chat(
-                    judge_input_mask,judge_embed,batch_size
-                )
-            #batch_size,1
-            
-
-            #print(tran_positive_probs)
-            #print("nexxt")
-            #print(trans_negative_probs)
-            
-
-            #tran_positive_probs[tran_positive_probs<0.5] = 0
-            #tran_positive_probs[tran_positive_probs>=0.5] = 1
-            
-           
-           
-            return judge_probs
 
     def _infer(self, inputs):
         """ Real inference process of model. """
@@ -1653,49 +1570,5 @@ class UnifiedTransformer(ModelBase):
                 results["tgt"] = layers.reshape(inputs["tgt_token"], [batch_size, -1])
         return results
 
-    def infer_chat(self, inputs):
-        """
-        Inference process.
-
-        @params : inputs : input data
-        @type : dict of numpy.ndarray/int/float/...
-        """
-        if not self._built:
-            self._build_once(inputs)
-            self._built = True
-
-        self.eval()
-        results = self._infer_chat(inputs)
-        results = {name: results[name].numpy() for name in results}
-        return results
-    def _infer_chat(self, inputs):
-        """ Real chat process of model. """
-        results = {}
-
-        # Initial decode state.
-        state = self._init_state(inputs)
-        if "post_probs" in state:
-            results["post_probs"] = state.pop("post_probs")
-
-        # Generation process.
-        gen_results = self.generator(self._decode, state)
-        results.update(gen_results)
-        pos_or_neag = self.judge_topic_chat(inputs)
-        results['judge'] = pos_or_neag
-        if self.num_latent > 0 and self.do_chat==False:
-            batch_size = state["batch_size"] // self.num_latent
-            results["scores"] = layers.reshape(results["scores"], [batch_size, self.num_latent])
-            results["log_p"] = results["scores"]
-            results["src"] = layers.reshape(inputs["src_token"], [batch_size, -1])
-            if "tgt_token" in inputs:
-                results["tgt"] = layers.reshape(inputs["tgt_token"], [batch_size, -1])
-            results["preds"] = layers.reshape(results["preds"], [batch_size, self.num_latent, -1])
-            if self.use_discriminator:
-                results["scores"] = self._ranking(inputs, results["preds"])
-        else:
-            batch_size = state["batch_size"]
-            if "tgt_token" in inputs:
-                results["tgt"] = layers.reshape(inputs["tgt_token"], [batch_size, -1])
-        return results
 
 UnifiedTransformer.register("UnifiedTransformer")

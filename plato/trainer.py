@@ -15,6 +15,7 @@
 Trainer class.
 """
 
+from email.policy import default
 import json
 import logging
 import os
@@ -103,9 +104,9 @@ class Trainer(object):
                            help="The validation metric determining which checkpoint is the best.")
         group.add_argument("--num_epochs", type=int, default=10,
                            help="Total number of training epochs to perform.")
-        group.add_argument("--save_dir", type=str, required=True,
+        group.add_argument("--save_dir", type=str, required=False,default="outputs/DDE.infer",
                            help="The output directory where the model will be saved.")
-        group.add_argument("--batch_size", type=int, default=8,
+        group.add_argument("--batch_size", type=int, default=1,
                            help="Total batch size for training/evaluation/inference.")
         group.add_argument("--log_steps", type=int, default=100,
                            help="The number of training steps to output current metrics "
@@ -117,7 +118,7 @@ class Trainer(object):
                            help="Whether to save one checkpoints for each training epoch.")
         group.add_argument("--save_summary", type=str2bool, default=False,
                            help="Whether to save metrics summary for visualDL module.")
-        group.add_argument("--use_topic_evaluate",type = str2bool,default = False,
+        group.add_argument("--use_topic_evaluate",type = str2bool,default = True,
                             help = "use_topic_evaluate") #新加入判别部分判断是否需要转换主题。
         DataLoader.add_cmdline_argument(group)
         return group
@@ -259,7 +260,7 @@ class Trainer(object):
         for batch, batch_size in tqdm(data_iter, total=num_batches):
             batch = type(batch)(map(lambda kv: (kv[0], self.to_tensor(kv[1])), batch.items()))
 
-            result = self.model.infer(inputs=batch)
+            result = self.model.infer_chat(inputs=batch)
             batch_result = {}
 
             def to_list(batch):
@@ -311,7 +312,7 @@ class Trainer(object):
         """
         self.logger.info("Generation starts ...")
         infer_save_file = os.path.join(self.save_dir, f"infer_{self.epoch}.result.json")
-        
+         
         #Judge_topic
         if self.topic_evaluate:
             tp_all,tn_all,fp_all,fn_all = 0,0,0,0
@@ -324,7 +325,7 @@ class Trainer(object):
 
             result = self.model.infer(inputs=batch)
             if self.topic_evaluate:
-                tp_tmp,tn_tmp,fp_tmp,fn_tmp = self.model.judge_topic_infer(inputs=batch)
+                tp_tmp,tn_tmp,fp_tmp,fn_tmp,postive_result,negative_result = self.model.judge_topic_infer(inputs=batch)
                 tp_all+=tp_tmp
                 tn_all+=tn_tmp
                 fp_all+=fp_tmp
@@ -343,7 +344,13 @@ class Trainer(object):
                     parse_fn = to_list
                 if result[k] is not None:
                     batch_result[k] = parse_fn(result[k])
-
+            if self.topic_evaluate:
+                postive_token = batch["postive_token"]
+                negative_token = batch["negative_token"]
+                batch_result['Postive'] = parse_dict['tgt'](postive_token.numpy())
+                batch_result["Negative"] = parse_dict['tgt'](negative_token.numpy())
+                batch_result["trans_postive"] = to_list(postive_result)
+                batch_result['trans_negative'] = to_list(negative_result) 
             for vs in zip(*batch_result.values()):
                 infer_result = {}
                 for k, v in zip(batch_result.keys(), vs):
@@ -356,7 +363,10 @@ class Trainer(object):
         if self.topic_evaluate:
             precision_all = tp_all/(tp_all+fp_all)
             recall_all = tp_all/(tp_all+fn_all)
-            f1 = (2*precision_all*recall_all)/(precision_all+recall_all)
+            if precision_all+recall_all!=0: 
+                f1 = (2*precision_all*recall_all)/(precision_all+recall_all)
+            else:
+               f1 = (2*precision_all*recall_all)/(precision_all+recall_all+1) 
             trans_score = "trans_tpoic--f1/precision/recall: "+str(f1)+" "+str(precision_all)+" "+str(recall_all)
         self.logger.info(f"Saved inference results to {infer_save_file}")
         with open(infer_save_file, "w") as fp:

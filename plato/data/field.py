@@ -15,6 +15,7 @@
 Field class
 """
 
+from email.policy import default
 from itertools import chain
 import json
 import numpy as np
@@ -36,6 +37,7 @@ def max_lens(X):
 
 def list2np(X, padding=0, dtype="int64"):
     shape = max_lens(X)
+    #print(shape)
     ret = np.full(shape, padding, dtype=np.int32)
 
     if len(shape) == 1:
@@ -60,7 +62,7 @@ class BPETextField(object):
     @classmethod
     def add_cmdline_argument(cls, parser):
         group = parser.add_argument_group("BPETextField")
-        group.add_argument("--vocab_path", type=str, required=True,
+        group.add_argument("--vocab_path", type=str,default='model/Bert/vocab.txt',
                            help="The vocabulary file path.")
         group.add_argument("--filtered", type=str2bool, default=False,
                            help="Whether to filter the data with too long utterance/context. "
@@ -212,7 +214,7 @@ class BPETextField(object):
 
     def build_example_multi_turn_with_knowledge(self, req):
         examples = []
-        src = [self.tokenizer.tokenize(s) for s in req["context"]]
+        src = [self.tokenizer.tokenize(s) for s in req["context"].split(" __eou__ ")]
         src = [s[-self.max_utt_len:] for s in src[-self.max_ctx_turn:]]
         src = [self.numericalize(s) + [self.eos_id] for s in src]
         knowledge = [self.tokenizer.tokenize(k) for k in req["knowledge"]]
@@ -222,6 +224,27 @@ class BPETextField(object):
         examples.append(ex)
         return examples
 
+    def build_example_multi_turn_with_knowledge_topic(self, req):
+        examples = []
+        src = [self.tokenizer.tokenize(s) for s in req["context"].split(" __eou__ ")]
+        src = [s[-self.max_utt_len:] for s in src[-self.max_ctx_turn:]]
+        src = [self.numericalize(s) + [self.eos_id] for s in src]
+        knowledge = [self.tokenizer.tokenize(k) for k in req["knowledge"].split(" __eou__ ")]
+        knowledge = [k[:self.max_knowledge_len] for k in knowledge[-self.max_knowledge_num:]] ##这块可能需要修改
+        knowledge = [self.numericalize(k) + [self.eos_id] for k in knowledge]
+        judge = self.tokenizer.tokenize(req['judge'])
+        judge = judge[:self.max_utt_len+2] ##这块可能需要修改
+        judge = [self.bos_id] + self.numericalize(judge) + [self.eos_id]
+        #import numpy as np
+        # (1, 51)
+        # (1, 31)
+        # (1, 23)
+        #print(np.array(src).shape)
+        #print(np.array(knowledge).shape)
+        #print(np.array(judge).shape)
+        ex = {"src": src, "knowledge": knowledge,'judge':judge}
+        examples.append(ex)
+        return examples
     def build_examples_multi_turn(self, data_file, data_type="train"):
         print(f"Reading examples from '{data_file}' ...")
         examples = []
@@ -280,7 +303,7 @@ class BPETextField(object):
         print(f"Built {len(examples)} {data_type.upper()} examples ({ignored} filtered)")
         return examples
 
-    def build_examples_multi_turn_with_knowledgei_topic_turn(self, data_file, data_type="train"):
+    def build_examples_multi_turn_with_knowledge_topic_turn(self, data_file, data_type="train"):
         '''
         在这里我们对原模型的数据输入进行修改，加入了判断是否需要进行topic转换的数据，分为正样本和负样本，
         正样本代表需要进行话题切换的样本，这样的样本从其它的样本中获得。
@@ -312,7 +335,7 @@ class BPETextField(object):
                     negative = [self.bos_id] + self.numericalize(negative) + [self.eos_id] 
                     postive = [self.bos_id] + self.numericalize(postive) + [self.eos_id]
                     negative = negative[:self.max_utt_len+2]
-                    postive = negative[:self.max_utt_len+2]
+                    postive = postive[:self.max_utt_len+2]
                     if data_type != "test":
                         tgt = tgt[:self.max_utt_len + 2]
 
@@ -359,6 +382,7 @@ class BPETextField(object):
         batch["src_pos"] = src_pos
         batch["src_type"] = src_role
         batch["src_turn"] = src_turn
+        batch["k_max_len"] = np.array([0],dtype='int64') #和有知识部分进行统一
 
         if "tgt" in samples[0]:
             tgt = [sp["tgt"] for sp in samples]
@@ -369,7 +393,7 @@ class BPETextField(object):
             # Position ids
             tgt_pos = np.zeros_like(tgt_token)
             tgt_pos[:] = np.arange(tgt_token.shape[1], dtype=tgt_token.dtype)
-
+            
             # Turn ids
             tgt_turn = np.zeros_like(tgt_token)
 
@@ -381,25 +405,32 @@ class BPETextField(object):
             batch["tgt_pos"] = tgt_pos
             batch["tgt_type"] = tgt_role
             batch["tgt_turn"] = tgt_turn
-            batch["k_max_len"] = 0 #和有知识部分进行统一
+            #batch["k_max_len"] = 0 #和有知识部分进行统一
         return batch, batch_size
 
     def collate_fn_multi_turn_with_knowledge(self, samples):
         batch_size = len(samples)
 
         src = [sp["src"] for sp in samples]
+        #print(np.array(src).shape)
         knowledge = [sp["knowledge"] for sp in samples]
         with_topic_transfer = False
+        predict = False
+        if "judge" in samples[0]:predict = True
         if "postive" in samples[0]:with_topic_transfer =True
         src_token, src_pos, src_turn, src_role = [], [], [], []
         knowledge_token,knowledge_pos,knowledge_turn,knowledge_role = [],[],[],[] #新加knwoledge的部分
+        k_max_len = 0
         for utts, ks in zip(src, knowledge):
             utt_lens = [len(utt) for utt in utts]
             k_lens = [len(k) for k in ks]
-            k_max_len = max(k_lens+[self.max_len])
+            #k_max_len = min([max(k_lens+[k_max_len]),self.max_len])
+            #k_max_len = np.array([max(k_lens+[self.max_len])],dtype='int64')
+            ks_chain = list(chain(*ks))
+            k_max_len = min(max(len(ks_chain),k_max_len),self.max_len)
             # Token ids
             token = list(chain(*utts))[-self.max_len:]
-            token.extend(list(chain(*ks))[-self.max_len:])
+            token.extend(ks_chain[-self.max_len:])
             src_token.append(token)
 
             # Position ids
@@ -417,19 +448,22 @@ class BPETextField(object):
                                 for i, l in enumerate(utt_lens)]))[-self.max_len:]
             role.extend(list(chain(*[[self.knowledge_id] * l for l in k_lens]))[-self.max_len:])
             src_role.append(role)
-        
+        #print("src_tokenshape",np.array(src_token).shape) 
         src_token = list2np(src_token, padding=self.pad_id)
         src_pos = list2np(src_pos, padding=self.pad_id)
         src_turn = list2np(src_turn, padding=self.pad_id)
         src_role = list2np(src_role, padding=self.pad_id)
-
+        #print(src_token.shape)
         batch = {}
         batch["src_token"] = src_token
+        #print("src_tokenshape",src_token.shape)
         batch["src_mask"] = (src_token != self.pad_id).astype("int64")#mask位的id为0，正常话语的id是1
+        #print(batch["src_mask"].shape)
         batch["src_pos"] = src_pos
         batch["src_type"] = src_role
         batch["src_turn"] = src_turn
-        batch["k_max_len"] = k_max_len #标记知识的最大范围。
+        batch["k_max_len"] = np.array([k_max_len],dtype= 'int64') #标记知识的最大范围。
+        #print("src_mask_filed:",batch["src_mask"].shape)
         if "tgt" in samples[0]:
             tgt = [sp["tgt"] for sp in samples]
 
@@ -451,34 +485,56 @@ class BPETextField(object):
             batch["tgt_pos"] = tgt_pos
             batch["tgt_type"] = tgt_role
             batch["tgt_turn"] = tgt_turn
-            if "postive" in samples[0]:
-                postive = [sp["postive"] for sp in samples]
-                postive_token = list2np(postive,padding = self.pad_id)
-                
-                postive_token_pos = np.zeros_like(postive_token)
-                postive_token_pos[:] = np.arange(postive_token_pos.shape[1],dtype = postive_token.dtype)
-                
-                postive_role = np.full_like(postive_token,self.user_id)
-                postive_turn = np.zeros_like(postive_token)
+        if "postive" in samples[0]:
+            postive = [sp["postive"] for sp in samples]
+            postive_token = list2np(postive,padding = self.pad_id)
+            
+            postive_token_pos = np.zeros_like(postive_token)
+            postive_token_pos[:] = np.arange(postive_token_pos.shape[1],dtype = postive_token.dtype)
+            
+            postive_role = np.full_like(postive_token,self.user_id)
+            postive_turn = np.zeros_like(postive_token)
 
-                batch["postive_token"] = postive_token
-                batch["postive_token_pos"] = postive_token_pos
-                batch["postive_type"] = postive_role
-                batch["postive_turn"] = postive_turn
-                batch["postive_mask"] = (postive_token != self.pad_id).astype("int64")
+            batch["postive_token"] = postive_token
+            batch["postive_token_pos"] = postive_token_pos
+            batch["postive_type"] = postive_role
+            batch["postive_turn"] = postive_turn
+            batch["postive_mask"] = (postive_token != self.pad_id).astype("int64")
 
-            if "negative" in samples[0]:
-                
-                negative = [sp["negative"] for sp in samples]
-                negative_token = list2np(negative,padding = self.pad_id)
-                
-                negative_token_pos = np.zeros_like(negative_token)
-                negative_token_pos[:] = np.arange(negative_token_pos.shape[1],dtype = negative_token.dtype)
-                negative_role = np.full_like(negative_token,self.user_id)
-                negative_turn = np.zeros_like(negative_token)
-                batch["negative_token"] = negative_token
-                batch["negative_token_pos"] = negative_token_pos
-                batch["negative_type"] = negative_role
-                batch["negative_turn"] = negative_turn
-                batch["negative_mask"] = (negative_token != self.pad_id).astype("int64")
+        if "negative" in samples[0]:
+            
+            negative = [sp["negative"] for sp in samples]
+            negative_token = list2np(negative,padding = self.pad_id)
+            
+            negative_token_pos = np.zeros_like(negative_token)
+            negative_token_pos[:] = np.arange(negative_token_pos.shape[1],dtype = negative_token.dtype)
+            negative_role = np.full_like(negative_token,self.user_id)
+            negative_turn = np.zeros_like(negative_token)
+            batch["negative_token"] = negative_token
+            batch["negative_token_pos"] = negative_token_pos
+            batch["negative_type"] = negative_role
+            batch["negative_turn"] = negative_turn
+            batch["negative_mask"] = (negative_token != self.pad_id).astype("int64")
+    
+        if "judge" in samples[0]:
+            #print("before",np.array(samples[0]['judge']).shape) 
+            judge = [sp["judge"] for sp in samples]
+            #import numpy as np
+            #print("before",np.array(judge).shape)
+            #print(judge)
+            judge_token = list2np(judge,padding = self.pad_id)
+            #print(judge_token.shape)
+            #print(judge_token)
+            judge_token_pos = np.zeros_like(judge_token)
+            #print("judge_pos:",judge_token_pos.shape)
+            judge_token_pos[:] = np.arange(judge_token_pos.shape[1],dtype = judge_token.dtype)
+            judge_role = np.full_like(judge_token,self.user_id)
+            judge_turn = np.zeros_like(judge_token)
+            #print("judge_shaoe",judge_token.shape)
+            batch["judge_token"] = judge_token
+            batch["judge_token_pos"] = judge_token_pos
+            batch["judge_type"] = judge_role
+            batch["judge_turn"] = judge_turn
+            batch["judge_mask"] = (judge_token != self.pad_id).astype("int64")
+
         return batch, batch_size

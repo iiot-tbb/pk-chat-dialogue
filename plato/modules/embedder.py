@@ -53,6 +53,8 @@ class Embedder(Layer):
         return
 
     def forward(self, token_inp, pos_inp, type_inp, turn_inp):
+        #print(token_inp.shape)
+        #print(pos_inp.shape)
         embed = self.token_embedding(token_inp) + \
             self.pos_embedding(pos_inp) + \
             self.type_embedding(type_inp) + \

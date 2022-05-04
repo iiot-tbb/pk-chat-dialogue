@@ -43,7 +43,7 @@ class ModelBase(fluid.dygraph.Layer):
     def add_cmdline_argument(cls, parser):
         """ Add cmdline argument. """
         group = parser.add_argument_group("Model")
-        group.add_argument("--init_checkpoint", type=str, default=None)
+        group.add_argument("--init_checkpoint", type=str, default="outputs/ACE_Dialog_pointer_context_transfer2/best.model")
         group.add_argument("--model", type=str, default="UnifiedTransformer",
                            choices=["UnifiedTransformer"])
         args, _ = parser.parse_known_args()

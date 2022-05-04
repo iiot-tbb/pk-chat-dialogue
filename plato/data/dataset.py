@@ -15,6 +15,7 @@
 Dataset class
 """
 
+from email.policy import default
 import json
 
 
@@ -24,10 +25,10 @@ class Dataset(object):
     @classmethod
     def add_cmdline_argument(cls, parser):
         group = parser.add_argument_group("Dataset")
-        group.add_argument("--data_dir", type=str, required=True,
+        group.add_argument("--data_dir", type=str, default="data/ACE_Dialog_topic",
                            help="The dataset dir.")
-        group.add_argument("--data_type", type=str, required=True,
-                           choices=["multi", "multi_knowledge","multi_knowledge_topic_transfer"],
+        group.add_argument("--data_type", type=str,
+                           choices=["multi", "multi_knowledge","multi_knowledge_topic_transfer"],default="multi_knowledge_topic_transfer",
                            help="The type of dataset.")
         return group
 

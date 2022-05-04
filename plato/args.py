@@ -63,7 +63,8 @@ class HParams(dict):
 
 def parse_args(parser):
     """ Parse hyper-parameters from cmdline. """
-    parsed = parser.parse_args()
+    #parsed = parser.parse_args()
+    parsed, unknown = parser.parse_known_args()
     args = HParams()
     optional_args = parser._action_groups[1]
     for action in optional_args._group_actions[1:]:

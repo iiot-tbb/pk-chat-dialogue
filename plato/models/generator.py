@@ -156,7 +156,7 @@ class Sampling(Generator):
         pos_index = layers.scale(pos_index, vocab_size) #缩放 vocab_size*pos_index[0,1*vo_size,,,(batch_size-1)*vocab_size]
 
         # shape: [batch_size,1]
-        predictions = layers.fill_constant(shape=[batch_size, 1],#在这里如何体现了beam——size的值呢？
+        predictions = layers.fill_constant(shape=[batch_size, 1],
                                            dtype="int64",
                                            value=self.bos_id)
         sequence_scores = layers.fill_constant(shape=[batch_size],
@@ -236,7 +236,7 @@ class TopKSampling(Sampling):
     def add_cmdline_argument(cls, group):
         Sampling.add_cmdline_argument(group)
         group.add_argument("--top_k_ratio", type=float, default=None)
-        group.add_argument("--top_k_num", type=int, default=None)
+        group.add_argument("--top_k_num", type=int, default=1)
         return group
 
     def __init__(self, hparams, bpe):
@@ -296,7 +296,7 @@ class BeamSearch(Generator):
 
     @classmethod
     def add_cmdline_argument(cls, group):
-        group.add_argument("--beam_size", type=int, default=2,
+        group.add_argument("--beam_size", type=int, default=1,
                            help="The beam size in beam search.")
         group.add_argument("--length_average", type=str2bool, default=False,
                            help="Whether to use length average.")
