@@ -234,7 +234,11 @@ class Item(BaseModel):
     src_token: str
     judge_token: str
     knowledge: str
-   
+
+class Item_judge(BaseModel):
+    judge_token:str
+    knowledge:str
+    src_token:str
 
 @app.post("/items2/")
 async def create_item(item: Item):# Declare it as a parameter
@@ -251,5 +255,22 @@ async def create_item(item: Item):# Declare it as a parameter
         msessage = trainer.infer_chat(test_loader, infer_parse_dict, num_batches=args.num_infer_batches)
         end = time.time()
         print("lasting_time,",end-now)
+        print(message)
         return (msessage)
 
+@app.post("/judge/")
+async def create_item(item: Item_judge):# Declare it as a parameter
+    print("start_chat:")
+    place = fluid.CPUPlace()
+    with fluid.dygraph.guard(place):
+        now = time.time()
+        #knowledge, src, judge = text.strip("\n").split("\t")
+        knowledge, src, judge = item.knowledge,item.src_token,item.judge_token
+        req = dict(context=src,knowledge=knowledge,judge=judge) #将对话进行分别为knoledge,src,tgt
+        data= build_example_fn(req)
+        dataset = Dataset(data)
+        test_loader = DataLoader(dataset, args.Trainer, collate_fn=collate_fn, is_test=args.do_infer)
+        msessage = trainer.infer_chat_judge_topic(test_loader, infer_parse_dict, num_batches=args.num_infer_batches)
+        end = time.time()
+        print("lasting_time,",end-now)
+        return (msessage)

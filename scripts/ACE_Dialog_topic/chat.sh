@@ -5,7 +5,8 @@ SAVE_DIR=outputs/DDE.infer
 VOCAB_PATH=model/Bert/vocab.txt
 DATA_DIR=data/DDE_Dialog
 #INIT_CHECKPOINT=outputs/DDE_Dialog/best.model
-INIT_CHECKPOINT=outputs/ACE_Dialog_pointer_context_transfer2_new/best.model
+#INIT_CHECKPOINT=outputs/ACE_Dialog_pointer_context_transfer2_new/best.model
+#INIT_CHECKPOINT=outputs/ACE_Dialog_pointer2_context/best.model
 DATA_TYPE=multi_knowledge
 LD_LIBRARY_PATH=~/miniconda3/envs/plato/lib/
 export LD_LIBRARY_PATH

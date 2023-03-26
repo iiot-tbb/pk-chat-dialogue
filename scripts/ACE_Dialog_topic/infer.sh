@@ -2,19 +2,19 @@
 set -ux
 
 #SAVE_DIR=outputs/personchat_Dialog_ceshi.infer
-SAVE_DIR=outputs/ACE_Dialog_context_transfer2_new.infer
+SAVE_DIR=outputs/ACE_Dialog_context_transfer2_from.infer
 #SAVE_DIR=outputs/ACE_Dialog_gpt.infer
 VOCAB_PATH=model/Bert/vocab.txt
 #DATA_DIR=data/DSTC7_AVSD
 #DATA_DIR=data/PersonaChat
 DATA_DIR=data/ACE_Dialog_topic
 #INIT_CHECKPOINT=outputs/personchat_Dialog_gpt/best.model
-INIT_CHECKPOINT=outputs/ACE_Dialog_pointer_context_transfer2_new/best.model
+INIT_CHECKPOINT=outputs/ACE_Dialog_pointer_context_transfer2_from/best.model
 #INIT_CHECKPOINT=outputs/ACE_Dialog_gpt/best.model
 DATA_TYPE=multi_knowledge_topic_transfer
 
 # CUDA environment settings.
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=0
 LD_LIBRARY_PATH=~/miniconda3/envs/plato/lib/
 export LD_LIBRARY_PATH
 

@@ -299,6 +299,15 @@ class UnifiedTransformer(ModelBase):
                 name2 = self.full_name()+".transtor/FC_0.b_0"
                 models[name1] = models["Model/UnifiedTransformer_0.discriminator/FC_0.w_0"]
                 models[name2] = models["Model/UnifiedTransformer_0.discriminator/FC_0.b_0"]
+            elif self.use_topic_trans:
+                name1 = self.full_name()+".transtor/FC_0.w_0"
+                name2 = self.full_name()+".transtor/FC_0.b_0"                
+                z1 = np.random.normal(scale=self.initializer_range,
+                                             size=[self.hidden_dim,1]).astype("float32")
+                z2 = np.random.normal(scale=self.initializer_range,
+                                             size=[1]).astype("float32")
+                models[name1] = fluid.dygraph.to_variable(z1)
+                models[name2] = fluid.dygraph.to_variable(z2)
             self.load_dict(models)
             print(f"Loaded parameters from {self.init_checkpoint}")
 
@@ -1553,20 +1562,20 @@ class UnifiedTransformer(ModelBase):
                 postive_input_mask,negative_input_mask,postive_embed,negative_embed,batch_size
             )
         #batch_size,1
-        #postive_,negative_ = tran_positive_probs,trans_negative_probs
-        temp1 = tran_positive_probs.numpy()
-        temp2 = trans_negative_probs.numpy()
+        postive_,negative_ = tran_positive_probs,trans_negative_probs
+        #temp1 = tran_positive_probs.numpy()
+        #temp2 = trans_negative_probs.numpy()
         trans_negative_probs = trans_negative_probs.numpy()
         tran_positive_probs = tran_positive_probs.numpy()
         
         #print(tran_positive_probs)
         #print("nexxt")
         #print(trans_negative_probs)
-        trans_negative_probs[trans_negative_probs>=0.5] = 0
-        trans_negative_probs[trans_negative_probs<0.5] =1
+        trans_negative_probs[trans_negative_probs>=0.5] = 0.0
+        trans_negative_probs[trans_negative_probs<0.5] =1.0
 
-        tran_positive_probs[tran_positive_probs<0.5] = 0
-        tran_positive_probs[tran_positive_probs>=0.5] = 1
+        tran_positive_probs[tran_positive_probs<0.5] = 0.0
+        tran_positive_probs[tran_positive_probs>=0.5] = 1.0
         
         tp = np.sum(tran_positive_probs)
         tn = np.sum(trans_negative_probs)
@@ -1576,7 +1585,7 @@ class UnifiedTransformer(ModelBase):
         fp = batch_size-tn
         #print(fp)
         #print(fn)
-        return tp,tn,fp,fn,temp1,temp2
+        return tp,tn,fp,fn,postive_,negative_
 
     def judge_topic_chat(self,inputs):
             src_token = inputs["src_token"]
@@ -1584,7 +1593,7 @@ class UnifiedTransformer(ModelBase):
             src_pos = inputs["src_pos"]
             src_type = inputs["src_type"]
             src_turn = inputs["src_turn"]
-            print(inputs.keys())
+            #print(inputs.keys())
             judge_token = inputs["judge_token"]
             judge_pos = inputs["judge_token_pos"]
             judge_type = inputs["judge_type"]
@@ -1610,7 +1619,7 @@ class UnifiedTransformer(ModelBase):
                     judge_input_mask,judge_embed,batch_size
                 )
             #batch_size,1
-            
+            #print(judge_probs,"fsdjhfglrjglkfdjglkj")
 
             #print(tran_positive_probs)
             #print("nexxt")
@@ -1622,7 +1631,7 @@ class UnifiedTransformer(ModelBase):
             
            
            
-            return judge_probs
+            return {"judge":judge_probs}
 
     def _infer(self, inputs):
         """ Real inference process of model. """
@@ -1680,8 +1689,9 @@ class UnifiedTransformer(ModelBase):
         # Generation process.
         gen_results = self.generator(self._decode, state)
         results.update(gen_results)
-        pos_or_neag = self.judge_topic_chat(inputs)
-        results['judge'] = pos_or_neag
+        # 将判断是否需要转移话题移出这一步
+        # pos_or_neag = self.judge_topic_chat(inputs)
+        # results['judge'] = pos_or_neag
         if self.num_latent > 0 and self.do_chat==False:
             batch_size = state["batch_size"] // self.num_latent
             results["scores"] = layers.reshape(results["scores"], [batch_size, self.num_latent])

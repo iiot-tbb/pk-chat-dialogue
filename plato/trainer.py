@@ -296,6 +296,57 @@ class Trainer(object):
         #message = "   ".join([message_prefix, metrics_message, time_cost])
         #self.logger.info(message)
         return infer_results
+    
+    def infer_chat_judge_topic(self, data_iter, parse_dict, num_batches=None):
+        """
+        Inference interface.
+
+        @param : data_iter
+        @type : DataLoader
+
+        @param : parse_dict
+        @type : dict of function
+
+        @param : num_batches : the number of batch to infer
+        @type : int/None
+        """
+        
+        # Inference
+        infer_results = []
+        batch_cnt = 0
+        begin_time = time.time()
+        for batch, batch_size in tqdm(data_iter, total=num_batches):
+            batch = type(batch)(map(lambda kv: (kv[0], self.to_tensor(kv[1])), batch.items()))
+
+            result = self.model.judge(inputs=batch)
+            #print(result,"resulhdlf")
+            batch_result = {}
+
+            def to_list(batch):
+                """ Parse list. """
+                return batch.tolist()
+
+            # parse
+            for k in result:
+                if k in parse_dict:
+                    parse_fn = parse_dict[k]
+                else:
+                    parse_fn = to_list
+                if result[k] is not None:
+                    #print("yessssss")
+                    batch_result[k] = parse_fn(result[k])
+
+            for vs in zip(*batch_result.values()):
+                infer_result = {}
+                for k, v in zip(batch_result.keys(), vs):
+                    infer_result[k] = v
+                infer_results.append(infer_result)
+
+            batch_cnt += 1
+            if batch_cnt == num_batches:
+                break
+
+        return infer_results
 
     def infer(self, data_iter, parse_dict, num_batches=None):
         """
@@ -349,8 +400,12 @@ class Trainer(object):
                 negative_token = batch["negative_token"]
                 batch_result['Postive'] = parse_dict['tgt'](postive_token.numpy())
                 batch_result["Negative"] = parse_dict['tgt'](negative_token.numpy())
-                batch_result["trans_postive"] = to_list(postive_result)
-                batch_result['trans_negative'] = to_list(negative_result) 
+                if hasattr(postive_result, "tolist"):
+                    batch_result["trans_postive"] = to_list(postive_result)
+                    batch_result['trans_negative'] = to_list(negative_result)
+                else:
+                    batch_result["trans_postive"] = to_list(postive_result.numpy())
+                    batch_result['trans_negative'] = to_list(negative_result.numpy())
             for vs in zip(*batch_result.values()):
                 infer_result = {}
                 for k, v in zip(batch_result.keys(), vs):

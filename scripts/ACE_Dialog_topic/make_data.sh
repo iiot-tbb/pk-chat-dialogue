@@ -2,7 +2,7 @@
 set -ux
 
 VOCAB_PATH=model/Bert/vocab.txt
-DATA_DIR=data/ACE_Dialog_topic
+DATA_DIR=data/ACE_Dialog_topic2
 INIT_CHECKPOINT=model/PLATO
 #INIT_CHECKPOINT=outputs/ACE_Dialog/best.model
 DATA_TYPE=multi_knowledge_topic_transfer

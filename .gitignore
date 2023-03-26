@@ -3,8 +3,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 outputs/
-model/
-plato/
 *.tar.gz
 # C extensions
 *.so

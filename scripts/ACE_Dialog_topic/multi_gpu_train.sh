@@ -3,19 +3,21 @@ set -ux
 
 #SAVE_DIR=outputs/DSTC7_plato #1
 #SAVE_DIR=outputs/ACE_Dialog_pointer1_context #1
-SAVE_DIR=outputs/ACE_Dialog_pointer_context_transfer2_new
+#SAVE_DIR=outputs/ACE_Dialog_pointer_context_transfer2_new
+SAVE_DIR=outputs/ACE_Dialog_pointer_context_transfer2_from
 VOCAB_PATH=model/Bert/vocab.txt
 #DATA_DIR=data/DSTC7_AVSD
-DATA_DIR=data/ACE_Dialog_topic
-#INIT_CHECKPOINT=model/PLATO
-INIT_CHECKPOINT=outputs/ACE_Dialog_pointer_context_transfer2_new/best.model
+DATA_DIR=data/ACE_Dialog_topic2
+INIT_CHECKPOINT=model/PLATO
+#INIT_CHECKPOINT=outputs/ACE_Dialog_pointer_context_transfer2_new/best.model
 #INIT_CHECKPOINT=outputs/ACE_Dialog/best.model
+#INIT_CHECKPOINT=outputs/ACE_Dialog_pointer_context_transfer2_from/best.model
 DATA_TYPE=multi_knowledge_topic_transfer
 USE_VISUALDL=true
 
 # CUDA environment settings.
 #export CUDA_VISIBLE_DEVICES=0,1,2,3 #2
-export CUDA_VISIBLE_DEVICES=2,3
+export CUDA_VISIBLE_DEVICES=0,1
 
 # Paddle environment settings.
 export FLAGS_fraction_of_gpu_memory_to_use=0.7

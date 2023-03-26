@@ -43,7 +43,7 @@ class ModelBase(fluid.dygraph.Layer):
     def add_cmdline_argument(cls, parser):
         """ Add cmdline argument. """
         group = parser.add_argument_group("Model")
-        group.add_argument("--init_checkpoint", type=str, default="outputs/ACE_Dialog_pointer_context_transfer2/best.model")
+        group.add_argument("--init_checkpoint", type=str, default="outputs/ACE_Dialog_pointer_context_transfer2_from/best.model")
         group.add_argument("--model", type=str, default="UnifiedTransformer",
                            choices=["UnifiedTransformer"])
         args, _ = parser.parse_known_args()
@@ -107,6 +107,9 @@ class ModelBase(fluid.dygraph.Layer):
         """ Real inference process of model. """
         raise NotImplementedError
 
+    def judge_topic_chat(self,inputs):
+        raise NotImplementedError
+
     def forward(self, inputs, is_training=False):
         """
         Forward process, include real forward, collect metrices and optimize(optional)
@@ -143,3 +146,14 @@ class ModelBase(fluid.dygraph.Layer):
         results = self._infer(inputs)
         results = {name: results[name].numpy() for name in results}
         return results
+    
+    def judge(self,inputs):
+        if not self._built:
+            self._build_once(inputs)
+            self._built = True
+
+        self.eval()
+        results = self.judge_topic_chat(inputs)
+        results = {name: results[name].numpy() for name in results}
+        return results
+     

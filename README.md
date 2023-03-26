@@ -179,13 +179,15 @@ trans_tpoic--f1/precision/recall: 0.9856707661062846 1.0 0.9717463848720801
 # 文件说明
 
 #### `chat.py`:对话文件，生成的对话聊天
-#### `../data_en/Baidu_text_transAPI.py`:将中文数据翻译成英文
+#### `../data_en/Baidu_text_transAPI.py`:将公开数据集中文数据翻译成英文
 #### `../data_en/Transform_to_plate_form.py`:将`json`格式的文本转换问纯文本形式,方便后续模型处理
 #### `../data_en/get_DDE_Data.py`:取得实验室数据中的三元组数据
 #### `../data_en/duconvEn_tran.txt`知识对话数据,`../data_en/duRecDialEn_train2.txt`推荐对话数据 
 #### `../data_en/make_abstract.py`缩短摘要的长度
-#### `../make_dialog.py`:制作对话数据
+#### `../make_dialog.py`:制作对话数据，及将后处理后得到的数据翻译为英文数据
 #### `../data_en/duRec_palto.txt`,`../data_en/duconv_plato.txt` 符合输入的对话数据
+#### `../data_en/op_neo4j,py` 插入到neo4j中
+### `../data_en/postProcess.py` 对初始对话数据做一些调整。
 # 修改记录
 - `tokenizer.py` 的 162行加入自己的never_split
 # 采用的造对话数据的方式
@@ -217,3 +219,134 @@ make wordcount                # 论文字数统计
 rm -Rf "$(biber --cache)"清理缓存。
 ```
 
+# 工程部署上线问题：
+lstm:uvicorn fastap:app --host 0.0.0.0 --port 8074 --reload
+
+- 当前在对话生成部分，由于加入了判别模块，因此，原有可以跑2batch的大小，现在只能跑1batch且速度慢，关于该部分的
+解决方法，初步设想是将模型参数加载为原先训练好的模型的部分，然后在此基础上微调。
+
+- 关于entity抽取部分，该部分主要的问题是抽取过于细节，拿全部的对话数据的样本有些过拟合当前需求部分的样本。解决方案是：
+    - 只考虑在地学部分的样本
+    - 引入正则表达式去抽取括号的内容，也就是说让用户对自己要查找的实体标注{}，(感觉这样有点不自然，but目前来说可以作为一个冷启动的方案去实现。)
+
+- 关于话题转换部分的判断，目前是最让人头疼的地方，在之前的抽取正负例子时，设计过于简单，只是拿上轮对话和当前对话的内容切含有关键词信息的句子作为正负样本，因此在判断转换时能力较弱，所以，我认为在这里设计时，应强调当用户问出一个新问题时(例如是询问新的实体的内容，才会判断为需要进行转换，其它情况一律不做转换，这里要配合entity抽取部分，如果用正则表达式直接抽出，则应转换话题。)。
+
+- 先找3个比较有代表性的例子，然后对这几个例子进行对话，发现其中问题，调整。
+    - sedimentation on antarctic sea floor
+    - aapg bulletin
+    - haiti
+    - wilkes station
+
+在Transform_to_plato_form.py里:
+negative是本文中的带知识文本
+postive是上一轮中的带知识文本
+且存入数据时，postive在前面，negative在后面
+
+但是在Plato/field.py里取出数据的时候，是把前面positve当作negative的样本，negative作为positive的样本。
+
+且在plato模型训练的时候，postive的样本让其接近1，negative的样本使其接近0。
+因此，也就是说当用户的话语中存在带本轮中知识时，使其接近1，反之使其接近0.
+
+
+
+
+User:  hi,xiaobo,how are you?
+
+Bot:  let me check . . .
+User:  can you tell me somthing about {sedimentation on antarctic sea floor}?
+
+
+Bot:  well , it's a little long . it's about timescale and lower cretaceous .
+User:  ok，I want to know what timescale does it mentioned?
+
+Bot:  well , this article is published in aapg bulletin , which is a high-quality article
+User:  ok ,what else do you know about sedimentation on antarctic sea floor?
+
+Bot:  this article is written by eugene domack , published in aapg bulletin
+User:  ok，how about it timescale?
+
+Bot:  mm-hmm . it belongs to timescale late pliocene .
+User:  ok, thank you very much.
+
+Bot:  you're welcome . it's a great book . it's a very interesting book .
+User:  haha,I also know somthing about the {haiti},do you know it ?
+
+
+Bot:  yes , its alpha code is ht .
+User:  haha,is haiti is their official name?
+
+Bot:  yes , its official name is ht . you can go to see it when you have time .
+User:  haha, you know a lot, thank you for your information.
+
+Bot:  you're welcome . this is a little fun . i wonder if you can help me ?
+User:  I also want to know a place named {wilkes station}.
+
+Bot:  the longitude of this place is-86 . 778
+User:  ok,how about it's laittude? 
+
+Bot:  yes , the longitude of this place is-86 . 778
+User:  what is the geohash of wilkes station?
+
+Bot:  its geohash value is 35 . 928
+User:  ok, it' still not good enough,byebye.
+
+Bot:  bye-bye .
+
+
+
+
+User:  hello,how are you?
+entity:: None
+now_score:  0.44770148396492004
+[{'preds': "i'm good . can i help you ?", 'scores': -4.454295635223389}]
+Bot:  i'm good . can i help you ?
+User:  yes, I wang to know some information about {sedimentation on antarctic sea floor},do you know something about it?
+entity:: sedimentation on antarctic sea floor
+now_score:  0.5219379663467407
+[{'preds': 'yes , i know . its longitude is-95 . 4487 and its corresponding longitude is-95 . 4487 .', 'scores': -7.049464702606201}]
+Bot:  yes , i know . its longitude is-95 . 4487 and its corresponding longitude is-95 . 4487 .
+User:  ok, what is the laittitude of it ?      
+entity:: None
+now_score:  0.44597145915031433
+[{'preds': 'uh huh , i know . its longitude is-95 . 4487 and its geohash is 29 . 03619 .', 'scores': -7.130092144012451}]
+Bot:  uh huh , i know . its longitude is-95 . 4487 and its geohash is 29 . 03619 .
+User:  ok, thank you for your information.
+entity:: None
+now_score:  0.47723332047462463
+[{'preds': "you're welcome . the longitude of this place is-95 . 4487 and the geohash value is 29 . 03619 .", 'scores': -10000000000.0}]
+Bot:  you're welcome . the longitude of this place is-95 . 4487 and the geohash value is 29 . 03619 .
+User:  ok, I also want to know {aapg bulletin}。
+entity:: aapg bulletin
+now_score:  0.5431324243545532
+[{'preds': 'oh , i know . this is an entity of location type .', 'scores': -7.32192325592041}]
+Bot:  oh , i know . this is an entity of location type .
+User:  ok, what else do you know about aapg bulletin?
+entity:: None
+now_score:  0.41006240248680115
+[{'preds': 'well , i only know that its longitude is-95 . 4487 and its longitude is-95 . 4487 .', 'scores': -4.84411096572876}]
+Bot:  well , i only know that its longitude is-95 . 4487 and its longitude is-95 . 4487 .
+User:  oh, thank you , I also want to know something about {haiti}.
+entity:: haiti
+now_score:  0.5342296957969666
+[{'preds': "ha ha , you're welcome . i'm sorry i didn't help you .", 'scores': -8.773594856262207}]
+Bot:  ha ha , you're welcome . i'm sorry i didn't help you .
+User:  do you know somthing about {wilkes station}?
+entity:: wilkes station
+now_score:  0.4594629108905792
+[{'preds': 'yes , it is located at-95 . 4487 and is located in the location category .', 'scores': -10.47912311553955}]
+Bot:  yes , it is located at-95 . 4487 and is located in the location category .
+User:  what else do you know about it?
+entity:: None
+now_score:  0.39715877175331116
+[{'preds': 'i know that its longitude is-95 . 4487 and latitude is 29 . 03619 .', 'scores': -4.401233196258545}]
+Bot:  i know that its longitude is-95 . 4487 and latitude is 29 . 03619 .
+User:  anything else ?
+entity:: None
+now_score:  0.41474100947380066
+[{'preds': 'its longitude is-95 . 44887 and its geohash is 9vhjhjhjbk0 .', 'scores': -4.219842433929443}]
+Bot:  its longitude is-95 . 44887 and its geohash is 9vhjhjhjbk0 .
+User:  ok ,thank you for your knowledge,byebye~
+entity:: None
+now_score:  0.5021130442619324
+[{'preds': "you're welcome . bye", 'scores': -1.9833500385284424}]
+Bot:  you're welcome . bye
