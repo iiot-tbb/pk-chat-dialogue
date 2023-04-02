@@ -25,7 +25,7 @@ tar xzf model.tar.gz
 ```
 
 ## Fine-tuning
-We also provide instructions to fine-tune PLATO on different conversation datasets (chit-chat, knowledge grounded dialogues and conversational question answering).
+We also provide instructions to fine-tune PK-chat model on different conversation datasets (chit-chat, knowledge grounded dialogues and conversational question answering).
 
 ### Data preparation
 Download data from the [link](https://baidu-nlp.bj.bcebos.com/PLATO/data.tar.gz).
@@ -78,7 +78,7 @@ GPU Memory | batch size | max len
 Running inference on test dataset.
 ```bash
 # DailyDialog / PersonaChat / DSTC7_AVSD / ACE_Dialog_topic
-DATASET=DailyDialog
+DATASET=ACE_Dialog_topic
 sh scripts/${DATASET}/infer.sh
 
 # Running inference of PLATO w/o latent
