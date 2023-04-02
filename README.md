@@ -2,6 +2,7 @@
 **PK-Chat: Pointer Network Guided Knowledge Driven Generative Dialogue Model**
 [paper link](https://www.aclweb.org/anthology/2020.acl-main.9.pdf)
 
+ This is the PK-chat models codes.
 
 ## Requirements
 ```
@@ -17,7 +18,7 @@ Recommend you install to python packages by command: `pip install -r requirement
 
 ## Pre-trained dialogue generation model
 You can see the PK-chat Dialog model from there:
-* PK-chat model, uncased [model](https://baidu-nlp.bj.bcebos.com/PLATO/model.tar.gz): 12-layers, 768-hidden, 12-heads, 132M parameters
+* PK-chat model, uncased [model](path: https://pan.baidu.com/s/1bNzGnnRPMfT4jkD_UsNSYg?pwd=pa7h): 12-layers, 768-hidden, 12-heads, 132M parameters
 
 ```bash
 mv /path/to/model.tar.gz .
