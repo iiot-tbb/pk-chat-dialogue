@@ -81,8 +81,6 @@ Running inference on test dataset.
 DATASET=ACE_Dialog_topic
 sh scripts/${DATASET}/infer.sh
 
-# Running inference of PLATO w/o latent
-sh scripts/ACE_Dialog_Dialog/baseline_infer.sh
 ```
 After inference, you can find the output foler `outputs/${DATASET}.infer` (by default). It contains `infer_0.result.json` (the inference result), `hparams.json` (hyper-parameters of inference scipt) and `trainer.log` (inference log).
 
@@ -100,7 +98,7 @@ sh scripts/DailyDialog/topk_infer.sh
 ## Citation
 If you find PK-Chat useful in your work, please cite the following paper:
 ```
-@article{Chen2017ASO,
+@article{PK2023,
   title={PK-CHAT: POINTER NETWORK GUIDED KNOWLEDGE DRIVEN GENERATIVE DIALOGUE MODEL},
   author={Cheng Deng and Bo Tong and Luoyi Fu and Jiaxin Ding and Dexing Cao and Xinbing Wang and Chenghu Zhou},
   journal={ArXiv},
