@@ -22,96 +22,6 @@ from fastapi import FastAPI,Query
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel
-# parser = argparse.ArgumentParser()
-# target = {"context":""}
-# BPETextField.add_cmdline_argument(parser)
-# args = parse_args(parser)
-# print(args)
-# bpe = BPETextField(args.BPETextField)
-# BUILD_EXAMPLES_FN = {
-#         "multi": bpe.build_example_multi_turn,
-#         "multi_knowledge": bpe.build_example_multi_turn_with_knowledge
-#     }
-# build_examples_fn = BUILD_EXAMPLES_FN["multi_knowledge"]
-# import json
-# with open("./example2.json","r") as f:
-#     req = json.load(f)
-# print(len(build_examples_fn(req)))
-# print(len(build_examples_fn(req)[0]["src"]))
-# print(len(build_examples_fn(req)[0]["knowledge"]))
-
-
-# do_infer=True
-
-
-#     if hparams.do_infer:
-#         raw_test_file = os.path.join(hparams.data_dir, "dial.test")
-#         test_file = raw_test_file + f".{hparams.tokenizer_type}.jsonl"
-#         assert os.path.exists(test_file), f"{test_file} isn't exist"
-#         test_dataset = LazyDataset(test_file)
-#         test_loader = DataLoader(test_dataset, hparams.Trainer, collate_fn=collate_fn, is_test=hparams.do_infer)
-
-#     def to_tensor(array):
-#         array = np.expand_dims(array, -1)
-#         return fluid.dygraph.to_variable(array)
-
-#     if hparams.use_data_distributed:
-#         place = fluid.CUDAPlace(parallel.Env().dev_id)
-#     else:
-#         place = fluid.CUDAPlace(0)
-
-#     with fluid.dygraph.guard(place):
-#         # Construct Model
-#         model = ModelBase.create("Model", hparams, generator=generator)
-
-#         # Construct Trainer
-#         trainer = Trainer(model, to_tensor, hparams.Trainer)
-
-#         if hparams.do_train:
-#             # Training process
-#             for epoch in range(hparams.num_epochs):
-#                 trainer.train_epoch(train_loader, valid_loader)
-
-#         if hparams.do_test:
-#             # Validation process
-#             trainer.evaluate(test_loader, need_save=False)
-
-#         if hparams.do_infer:
-#             # Inference process
-#             def split(xs, sep, pad):
-#                 """ Split id list by separator. """
-#                 out, o = [], []
-#                 for x in xs:
-#                     if x == pad:
-#                         continue
-#                     if x != sep:
-#                         o.append(x)
-#                     else:
-#                         if len(o) > 0:
-#                             out.append(list(o))
-#                             o = []
-#                 if len(o) > 0:
-#                     out.append(list(o))
-#                 assert(all(len(o) > 0 for o in out))
-#                 return out
-
-#             def parse_context(batch):
-#                 """ Parse context. """
-#                 return bpe.denumericalize([split(xs, bpe.eos_id, bpe.pad_id)
-#                                            for xs in batch.tolist()])
-
-#             def parse_text(batch):
-#                 """ Parse text. """
-#                 return bpe.denumericalize(batch.tolist())
-
-#             infer_parse_dict = {
-#                 "src": parse_context,
-#                 "tgt": parse_text,
-#                 "preds": parse_text
-#             }
-#             trainer.infer(test_loader, infer_parse_dict, num_batches=hparams.num_infer_batches)
-
-#if __name__ == "__main__":
 
 text = "START Guo Shaoyun Blessed love __eou__ Blessed love to star Guo Shaoyun __eou__ Guo Shaoyun comment Tvber in my eyes __eou__ Guo Shaoyun date of birth 1970-8-25 __eou__ Guo Shaoyun height 168cm __eou__ Guo Shaoyun Gender female __eou__ Guo Shaoyun occupation performer __eou__ Guo Shaoyun field Star __eou__ Blessed love Comments on time.com Teacher Bai's play is to watch! __eou__ Blessed love Release date information It was shown last month __eou__ Blessed love to star Guo Shaoyun __eou__ Blessed love type Fantasy __eou__ Blessed love field film __eou__ Guo Shaoyun describe a girl from a rich family __eou__ Guo Shaoyun Ancestral home Hong Kong, China __eou__ Guo Shaoyun nation Han nationality	Who do you know? __eou__ There's a lot of money there. Who are you talking about? __eou__ Guo Shaoyun, do you know? __eou__ I've heard of her.	Mm-hmm! She's also the star of the movie God bless love! Have you seen it?"
 text = "START Guo Shaoyun Blessed love __eou__ Blessed love to star Guo Shaoyun __eou__ Guo Shaoyun comment Tvber in my eyes __eou__ Guo Shaoyun date of birth 1970-8-25 __eou__ Guo Shaoyun height 168cm __eou__ Guo Shaoyun Gender female __eou__ Guo Shaoyun occupation performer __eou__ Guo Shaoyun field Star __eou__ Blessed love Comments on time.com Teacher Bai's play is to watch! __eou__ Blessed love Release date information It was shown last month __eou__ Blessed love to star Guo Shaoyun __eou__ Blessed love type Fantasy __eou__ Blessed love field film __eou__ Guo Shaoyun describe a girl from a rich family __eou__ Guo Shaoyun Ancestral home Hong Kong, China __eou__ Guo Shaoyun nation Han nationality	Who do you know? __eou__ There's a lot of money there. Who are you talking about? __eou__ Guo Shaoyun, do you know? __eou__ I've heard of her.	who is tongbo?"
@@ -157,11 +67,6 @@ collate_fn = bpe.collate_fn_multi_turn_with_knowledge #padding
 data= build_example_fn(req)
 dataset = Dataset(data)
 test_loader = DataLoader(dataset, args.Trainer, collate_fn=collate_fn, is_test=args.do_infer)
-#raw_test_file = os.path.join(args.data_dir, "dial.test")
-#test_file = raw_test_file + f".{args.tokenizer_type}.jsonl"
-#assert os.path.exists(test_file), f"{test_file} isn't exist"
-#test_dataset = LazyDataset(test_file)
-#test_loader = DataLoader(test_dataset, args.Trainer, collate_fn=collate_fn, is_test=args.do_infer)
 
 print(json.dumps(args,indent=4))
 #for s in test_loader:
@@ -225,9 +130,6 @@ with fluid.dygraph.guard(place):
     }
 
 
-    #msessage = trainer.infer_chat(test_loader, infer_parse_dict, num_batches=args.num_infer_batches)
-
-    #print(msessage)
 
 class Item(BaseModel):
     #定义请求数据的模型
