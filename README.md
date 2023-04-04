@@ -1,6 +1,6 @@
 # PK-Chat
 **PK-Chat: Pointer Network Guided Knowledge Driven Generative Dialogue Model**
-[paper link](https://www.aclweb.org/anthology/2020.acl-main.9.pdf)
+[paper link](https://arxiv.org/abs/2304.00592)
 
  This is the PK-chat models codes.
 
@@ -99,11 +99,13 @@ sh scripts/DailyDialog/topk_infer.sh
 ## Citation
 If you find PK-Chat useful in your work, please cite the following paper:
 ```
-@article{PK2023,
-  title={PK-CHAT: POINTER NETWORK GUIDED KNOWLEDGE DRIVEN GENERATIVE DIALOGUE MODEL},
-  author={Cheng Deng and Bo Tong and Luoyi Fu and Jiaxin Ding and Dexing Cao and Xinbing Wang and Chenghu Zhou},
-  journal={ArXiv},
-    year={2023},
+@misc{deng2023pkchat,
+      title={PK-Chat: Pointer Network Guided Knowledge Driven Generative Dialogue Model}, 
+      author={Cheng Deng and Bo Tong and Luoyi Fu and Jiaxin Ding and Dexing Cao and Xinbing Wang and Chenghu Zhou},
+      year={2023},
+      eprint={2304.00592},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL}
 }
 ```
  
