@@ -113,4 +113,4 @@ If you find PK-Chat useful in your work, please cite the following paper:
 ## Contact information
 For help or issues using PK-chat, please submit a GitHub issue.
 
-For personal communication related to PK-chat, please contact Bo Tong (`bool_tbb@alumin.sjtu.edu.cn`), or Cheng Deng (`davendw@sjtu.edu.cn`).
+For personal communication related to PK-chat, please contact Bo Tong (`bool_tbb@alumni.sjtu.edu.cn`), or Cheng Deng (`davendw@sjtu.edu.cn`).
