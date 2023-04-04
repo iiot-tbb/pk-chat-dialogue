@@ -2,8 +2,6 @@
 **PK-Chat: Pointer Network Guided Knowledge Driven Generative Dialogue Model**
 [paper link](https://arxiv.org/abs/2304.00592)
 
- This is the PK-chat models codes.
-
 ## Requirements
 ```
 - python >= 3.6
